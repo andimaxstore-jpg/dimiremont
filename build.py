@@ -387,7 +387,7 @@ def build():
 <a class="btn" href="katalog.html">Повернутися до каталогу</a></div>
 
 <div class="done" data-fallback hidden><h2>Не вдалося надіслати замовлення автоматично</h2><p>Будь ласка, надішліть цей текст нам у месенджер або зателефонуйте {E(C.PHONE)}.</p>
-<pre data-order-text></pre><div class="hero-cta"><button type="button" class="btn" data-copy>Скопіювати текст</button>{tg}{vb}</div></div>
+<pre data-order-text></pre><p class="note" data-err-code></p><div class="hero-cta"><button type="button" class="btn" data-copy>Скопіювати текст</button>{tg}{vb}</div></div>
 </section>"""
     open(os.path.join(OUT, 'koshyk.html'), 'w', encoding='utf8').write(page('', 'koshyk.html', f'Оформлення замовлення | {C.SHOP_NAME}', 'Кошик і оформлення замовлення.', body, robots='noindex,follow'))
     body = f'''<section class="wrap block narrow"><h1>Доставка і оплата</h1><h2>Доставка</h2><p>{E(C.DELIVERY)}. Відправляємо після підтвердження замовлення менеджером.</p>

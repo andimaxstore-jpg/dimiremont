@@ -9,6 +9,7 @@
   --bg:#11151d; --surface:#1a202c; --fg:#e7eaf0; --muted:#9aa3b5; --line:#2a3242; --ink:#c9d3ea; --accent:#efb544; --accent-fg:#1b1606; --sale:#e7664f; --ok:#5cc08b; color-scheme:dark}}
 :root[data-theme="dark"]{--bg:#11151d; --surface:#1a202c; --fg:#e7eaf0; --muted:#9aa3b5; --line:#2a3242; --ink:#c9d3ea; --accent:#efb544; --accent-fg:#1b1606; --sale:#e7664f; --ok:#5cc08b; color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 var(--body)}
 img{max-width:100%;height:auto;display:block}

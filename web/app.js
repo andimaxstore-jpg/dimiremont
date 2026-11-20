@@ -277,13 +277,14 @@
       fetch(API + 'order', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(o) })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (res) {
-          if (!res.ok || !res.d.ok) throw new Error(res.d && res.d.error);
+          if (!res.ok || !res.d.ok) throw new Error((res.d && res.d.error || 'http') + (res.d && res.d.details ? ': ' + res.d.details.join('; ') : ''));
           document.querySelector('[data-order-id]').textContent = res.d.id;
           document.querySelector('[data-order-phone]').textContent = o.customer.phone;
           save([]); checkout.hidden = true; document.querySelector('[data-done]').hidden = false; scrollTo(0, 0);
         })
-        .catch(function () {
+        .catch(function (ex) {
           var t = orderText(o);
+          var ec = document.querySelector('[data-err-code]'); if (ec) ec.textContent = 'Код помилки: ' + (ex && ex.message || 'network');
           document.querySelector('[data-order-text]').textContent = t;
           var tg = document.querySelector('[data-tg]'); if (tg) tg.href = tg.href.split('?')[0] + '?text=' + encodeURIComponent(t);
           checkout.hidden = true; document.querySelector('[data-fallback]').hidden = false; scrollTo(0, 0);

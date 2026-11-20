@@ -188,7 +188,7 @@ async function order(request, env) {
     `\n<b>Товари:</b>\n${lines.join('\n')}\n\n<b>Разом: ${money(total)}</b>`;
 
   const chats = String(env.TELEGRAM_CHAT_ID).split(',').map((s) => s.trim()).filter(Boolean);
-  let sent = 0;
+  let sent = 0; const tgErrors = [];
   for (const chat_id of chats) {
     const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
@@ -196,7 +196,8 @@ async function order(request, env) {
       body: JSON.stringify({ chat_id, text: text.slice(0, 4000), parse_mode: 'HTML', disable_web_page_preview: true }),
     });
     if (r.ok) sent++;
+    else { let d = {}; try { d = await r.json(); } catch {} tgErrors.push(`${r.status} ${d.description || ''}`.trim()); }
   }
-  if (!sent) return json({ error: 'telegram_failed' }, 502);
+  if (!sent) { console.log('telegram_failed', tgErrors); return json({ error: 'telegram_failed', details: tgErrors }, 502); }
   return json({ ok: true, id, total });
 }
