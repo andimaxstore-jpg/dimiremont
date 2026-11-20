@@ -1,0 +1,15 @@
+# Розгортання «Дім і Ремонт» на Cloudflare
+
+Сайт = Cloudflare Worker `dimiremont`: статичні сторінки з `site/` + серверний код `worker/worker.js` (прийом замовлень, довідники НП/Укрпошти).
+
+## Збірка
+    python3 build.py          # генерує site/
+    npx wrangler deploy       # викладає Worker (потрібен Node.js 18+ і вхід: npx wrangler login)
+
+## Секрети Worker (Cloudflare → Workers & Pages → dimiremont → Settings → Variables and Secrets → Add → Secret)
+- TELEGRAM_BOT_TOKEN — токен бота від @BotFather
+- TELEGRAM_CHAT_ID   — ваш числовий id (дізнатися: напишіть @userinfobot) або id групи; кілька — через кому
+- NP_API_KEY         — ключ API Нової пошти (кабінет НП → Налаштування → Безпека → Ключ API)
+- UP_TOKEN           — bearer-токен Укрпошти (видається за договором); без нього клієнт вписує відділення Укрпошти вручну
+
+Перевірка: відкрийте /api/health — побачите, які секрети підключено.

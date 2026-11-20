@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /koshyk.html
+
+Sitemap: https://dimiremont.com.ua/sitemap.xml
