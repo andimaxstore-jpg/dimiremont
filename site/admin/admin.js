@@ -700,10 +700,22 @@
       ${field('Доставка (коротко)', 'delivery', s.delivery, { span: true })}${field('Оплата (коротко)', 'payment', s.payment, { span: true })}
       ${field('Адреса самовивозу', 'pickup_address', s.pickup_address)}${field('Час видачі', 'pickup_hours', s.pickup_hours)}</div></div>
     <div class="savebar"><button class="btn">Зберегти</button></div></form>
+    <div class="card" style="margin-top:16px"><h2>Сповіщення в Telegram</h2><p class="hint">Надсилає тестове повідомлення на TELEGRAM_CHAT_ID і показує, що відповів Telegram.</p>
+      <button type="button" class="btn ghost" id="tgtest">Надіслати тестове повідомлення</button><div id="tgres" style="margin-top:10px"></div></div>
     <div class="card" style="margin-top:16px"><h2>Резервна копія</h2><p class="hint">Усі товари, категорії, сторінки та замовлення одним файлом JSON. Радимо завантажувати раз на тиждень.</p>
       <a class="btn ghost" href="/api/admin/export">Завантажити резервну копію</a></div>`;
     const form = $('#st'); watchDirty(form);
     form.addEventListener('submit', async (e) => { e.preventDefault(); try { await api('PUT', 'settings', formData(form)); dirty = false; toast('Збережено'); } catch (ex) { fail(ex); } });
+    $('#tgtest').addEventListener('click', async () => {
+      const out = $('#tgres'); out.innerHTML = '<p class="muted">Надсилаємо…</p>';
+      try {
+        const r = await api('POST', 'telegram-test', {});
+        out.innerHTML = (r.bot ? `<p>Бот: <b>${esc(r.bot)}</b></p>` : '') + r.results.map((x) => x.ok
+          ? `<p style="color:var(--ok)">✓ Чат ${esc(x.chat)}: повідомлення надіслано</p>`
+          : `<p class="err">✗ ${x.chat ? 'Чат ' + esc(x.chat) + ': ' : ''}${esc(x.error)}</p>`).join('') +
+          (r.ok ? '' : '<p class="hint">«chat not found» — неправильний TELEGRAM_CHAT_ID або ви ще не натиснули Start у бота. «bot was blocked» — розблокуйте бота. «Unauthorized» — неправильний токен.</p>');
+      } catch (ex) { out.innerHTML = `<p class="err">${esc(ex.message)}</p>`; }
+    });
   }
 
   boot();
