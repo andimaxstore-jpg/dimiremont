@@ -33,6 +33,10 @@
       document.querySelectorAll('[data-sku]').forEach(function (el) { el.textContent = v.sku; });
       var vs = prodEl.querySelector('[data-vsize]'); if (vs) vs.textContent = v.size || '';
       prodEl.querySelector('[data-price]').textContent = money(v.price);
+      var oldEl = prodEl.querySelector('[data-old]');
+      if (oldEl) { oldEl.hidden = !(v.old > v.price); oldEl.textContent = v.old > v.price ? money(v.old) : ''; }
+      var stEl = prodEl.querySelector('[data-stock]');
+      if (stEl && 'stock' in v) { stEl.textContent = v.stock ? 'В наявності' : 'Немає в наявності — під замовлення'; stEl.className = 'stock ' + (v.stock ? 'in' : 'out'); }
       var img = prodEl.querySelector('[data-main]');
       if (v.img && img.getAttribute('src') !== v.img) { img.src = v.img; img.classList.remove('ph'); }
       if (history.replaceState) { try { history.replaceState(null, '', '#' + v.sku); } catch (e) {} }
@@ -65,22 +69,46 @@
     render();
   }
 
-  // ---------- каталог: фільтр, пошук, сортування ----------
+  // ---------- каталог і категорії: фільтри, пошук, сортування ----------
   var cat = document.querySelector('[data-catalog]');
   if (cat) {
     var cards = Array.prototype.slice.call(cat.children);
+    var facetsOf = cards.map(function (c) { try { return JSON.parse(c.getAttribute('data-f') || '{}'); } catch (e) { return {}; } });
     var params = new URLSearchParams(location.search);
     var qv = (params.get('q') || '').toLowerCase().trim();
     var f = '';
     var qi = document.getElementById('q'); if (qi && qv) qi.value = params.get('q');
+    var panel = document.querySelector('[data-filters]');
+    function selected() {
+      var s = { price: [0, Infinity], sets: {} };
+      if (!panel) return s;
+      panel.querySelectorAll('[data-flt]').forEach(function (fs) {
+        var k = fs.getAttribute('data-flt');
+        if (k === 'price') {
+          var lo = parseFloat(fs.querySelector('[data-min]').value), hi = parseFloat(fs.querySelector('[data-max]').value);
+          s.price = [isNaN(lo) ? 0 : lo, isNaN(hi) ? Infinity : hi];
+          return;
+        }
+        var vals = [];
+        fs.querySelectorAll('input:checked').forEach(function (i) { vals.push(i.value); });
+        if (vals.length) s.sets[k] = vals;
+      });
+      return s;
+    }
     function apply() {
-      var n = 0;
-      cards.forEach(function (c) {
-        var ok = (!f || c.getAttribute('data-cat') === f) && (!qv || qv.split(/\s+/).every(function (w) { return c.getAttribute('data-title').toLowerCase().indexOf(w) >= 0; }));
+      var n = 0, s = selected(), keys = Object.keys(s.sets);
+      cards.forEach(function (c, idx) {
+        var price = +c.getAttribute('data-price'), fc = facetsOf[idx];
+        var ok = (!f || c.getAttribute('data-cat') === f) &&
+          (!qv || qv.split(/\s+/).every(function (w) { return c.getAttribute('data-title').toLowerCase().indexOf(w) >= 0; })) &&
+          price >= s.price[0] && price <= s.price[1] &&
+          keys.every(function (k) { var have = fc[k] || []; return s.sets[k].some(function (v) { return have.indexOf(v) >= 0; }); });
         c.hidden = !ok; if (ok) n++;
       });
-      document.querySelector('[data-found]').textContent = 'Знайдено: ' + n;
+      var found = document.querySelector('[data-found]'); if (found) found.textContent = 'Знайдено: ' + n;
       document.querySelector('[data-empty]').hidden = n > 0;
+      var reset = panel && panel.querySelector('[data-reset]');
+      if (reset) reset.hidden = !(keys.length || s.price[0] > 0 || s.price[1] < Infinity);
     }
     document.querySelectorAll('[data-filter]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -89,7 +117,21 @@
         apply();
       });
     });
-    document.getElementById('sort').addEventListener('change', function (e) {
+    if (panel) {
+      panel.addEventListener('change', apply);
+      panel.addEventListener('input', function (e) { if (e.target.type === 'number') apply(); });
+      panel.querySelectorAll('[data-more]').forEach(function (b) {
+        b.addEventListener('click', function () { var fs = b.closest('.flt'); fs.classList.toggle('open'); b.textContent = fs.classList.contains('open') ? 'Згорнути' : 'Показати всі'; });
+      });
+      panel.querySelector('[data-reset]').addEventListener('click', function () {
+        panel.querySelectorAll('input').forEach(function (i) { if (i.type === 'checkbox') i.checked = false; else i.value = ''; });
+        apply();
+      });
+      var opener = document.querySelector('[data-flt-open]');
+      if (opener) opener.addEventListener('click', function () { panel.classList.toggle('open'); opener.setAttribute('aria-expanded', panel.classList.contains('open')); });
+    }
+    var sortEl = document.getElementById('sort');
+    if (sortEl) sortEl.addEventListener('change', function (e) {
       var s = e.target.value, arr = cards.slice();
       if (s) arr.sort(function (a, b) { var d = a.getAttribute('data-price') - b.getAttribute('data-price'); return s === 'asc' ? d : -d; });
       arr.forEach(function (c) { cat.appendChild(c); });

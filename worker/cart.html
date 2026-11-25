@@ -1,0 +1,57 @@
+<section class="wrap block cart"><h1>Оформлення замовлення</h1>
+<p class="empty" data-cart-empty hidden>Кошик порожній. <a href="/katalog.html">Перейти до каталогу</a></p>
+<div class="checkout" data-checkout hidden>
+<form class="co-form" id="order-form" data-order novalidate>
+<input type="text" name="website" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
+<fieldset class="co-step"><legend><span class="n">1</span>Контактні дані</legend>
+<div class="fields">
+<label for="o-last">Прізвище<input id="o-last" name="lastName" required autocomplete="family-name"></label>
+<label for="o-first">Ім’я<input id="o-first" name="firstName" required autocomplete="given-name"></label>
+<label for="o-phone">Телефон<input id="o-phone" name="phone" type="tel" required autocomplete="tel" inputmode="tel" placeholder="+380 __ ___ __ __"></label>
+<label for="o-email"><span>Email <small>(необов’язково)</small></span><input id="o-email" name="email" type="email" autocomplete="email"></label>
+</div></fieldset>
+
+<fieldset class="co-step"><legend><span class="n">2</span>Доставка</legend>
+<div class="radios" role="radiogroup">
+<label class="radio"><input type="radio" name="method" value="np" checked><span><b>Нова пошта</b><small>Відділення або поштомат</small></span></label>
+<label class="radio"><input type="radio" name="method" value="np_courier"><span><b>Кур’єр Нової пошти</b><small>Доставка на адресу</small></span></label>
+<label class="radio"><input type="radio" name="method" value="up"><span><b>Укрпошта</b><small>Відділення Укрпошти</small></span></label>
+<label class="radio"><input type="radio" name="method" value="pickup"><span><b>Самовивіз</b><small>{{PICKUP_ADDRESS}}, безкоштовно</small></span></label>
+</div>
+<div class="fields" data-for="np np_courier up">
+<div class="ac wide" data-ac="city"><label for="o-city">Місто або село</label><input id="o-city" autocomplete="off" placeholder="Почніть вводити назву, напр. Київ" role="combobox" aria-expanded="false" aria-controls="o-city-list"><ul id="o-city-list" role="listbox" hidden></ul></div>
+<div class="ac wide" data-ac="branch" data-for="np up"><label for="o-branch">Відділення</label><input id="o-branch" autocomplete="off" placeholder="Спершу оберіть місто" disabled role="combobox" aria-expanded="false" aria-controls="o-branch-list"><ul id="o-branch-list" role="listbox" hidden></ul></div>
+<label for="o-addr" class="wide" data-for="np_courier">Адреса: вулиця, будинок, квартира<input id="o-addr" name="address" autocomplete="street-address"></label>
+<p class="note wide" data-manual hidden>Довідник тимчасово недоступний. Впишіть місто та номер або індекс відділення вручну.</p>
+</div>
+<div class="pickup" data-for="pickup"><b>{{PICKUP_ADDRESS}}</b><p>{{PICKUP_HOURS}}. Телефон: {{PHONE}}</p></div>
+</fieldset>
+
+<fieldset class="co-step"><legend><span class="n">3</span>Оплата</legend>
+<div class="radios">
+<label class="radio" data-pay="cod"><input type="radio" name="payment" value="cod" checked><span><b>Накладений платіж</b><small>Оплата при отриманні</small></span></label>
+<label class="radio" data-pay="card"><input type="radio" name="payment" value="card"><span><b>На рахунок або картку</b><small>Реквізити надішле менеджер після підтвердження</small></span></label>
+<label class="radio" data-pay="cash" hidden><input type="radio" name="payment" value="cash"><span><b>Готівкою або карткою</b><small>При самовивозі</small></span></label>
+</div></fieldset>
+
+<fieldset class="co-step"><legend><span class="n">4</span>Коментар</legend>
+<label for="o-note" class="sr">Коментар до замовлення</label><textarea id="o-note" name="comment" rows="3" placeholder="Побажання щодо замовлення або доставки"></textarea>
+<label class="check"><input type="checkbox" id="o-nocall" name="nocall"> Не телефонуйте мені для підтвердження, якщо все в наявності</label>
+</fieldset>
+<p class="form-err" data-err role="alert" hidden></p>
+</form>
+
+<aside class="co-sum"><h2>Ваше замовлення</h2><div data-cart-list></div>
+<div class="sum-row"><span>Доставка</span><span data-ship>за тарифами перевізника</span></div>
+<div class="sum-row total"><span>Разом</span><span data-total></span></div>
+<button class="btn wide-btn" type="submit" form="order-form" data-submit>Підтвердити замовлення</button>
+<p class="note">Натискаючи кнопку, ви погоджуєтесь, що менеджер зв’яжеться з вами для підтвердження.</p></aside>
+</div>
+
+<div class="done" data-done hidden><h2>Дякуємо! Замовлення №<span data-order-id></span> прийнято</h2>
+<p>Менеджер зв’яжеться з вами найближчим часом за номером <b data-order-phone></b>, щоб підтвердити наявність і доставку.</p>
+<a class="btn" href="/katalog.html">Повернутися до каталогу</a></div>
+
+<div class="done" data-fallback hidden><h2>Не вдалося надіслати замовлення автоматично</h2><p>Будь ласка, надішліть цей текст нам у месенджер або зателефонуйте {{PHONE}}.</p>
+<pre data-order-text></pre><p class="note" data-err-code></p><div class="hero-cta"><button type="button" class="btn" data-copy>Скопіювати текст</button>{{TG}}{{VB}}</div></div>
+</section>

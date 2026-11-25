@@ -8,7 +8,19 @@
     "binding": "ASSETS",
     "not_found_handling": "404-page",
     "html_handling": "auto-trailing-slash",
-    "run_worker_first": ["/api/*"]
+    // Сторінки збирає Worker з бази; статика (стилі, фото, адмінка) — напряму з site/.
+    "run_worker_first": ["/*", "!/assets/*", "!/img/*", "!/admin/*"]
+  },
+  // База бек-офісу (Cloudflare → Storage & Databases → D1 → dimiremont-db).
+  "d1_databases": [
+    { "binding": "DB", "database_name": "dimiremont-db", "database_id": "cfea4468-eccc-4e99-a190-f88d289fb4c1" }
+  ],
+  // Попередній перегляд гілок (wrangler preview) працює з тією самою базою:
+  // поки сайт один, так простіше перевіряти адмінку на справжніх даних.
+  "previews": {
+    "d1_databases": [
+      { "binding": "DB", "database_name": "dimiremont-db", "database_id": "cfea4468-eccc-4e99-a190-f88d289fb4c1" }
+    ]
   },
   "observability": { "enabled": true },
   "keep_vars": true
