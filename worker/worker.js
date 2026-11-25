@@ -296,10 +296,11 @@ async function notifyTelegram(env, o) {
     (o.callMe === false ? '<i>Клієнт просить не дзвонити для підтвердження</i>\n' : '') +
     `\n<b>Товари:</b>\n${lines.join('\n')}\n\n<b>Разом: ${money(o.total)}</b>`;
   const chats = String(env.TELEGRAM_CHAT_ID).split(',').map((s) => s.trim()).filter(Boolean);
+  const token = String(env.TELEGRAM_BOT_TOKEN).trim();
   let sent = 0; const errors = [];
   for (const chat_id of chats) {
     try {
-      const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ chat_id, text: text.slice(0, 4000), parse_mode: 'HTML', disable_web_page_preview: true }),

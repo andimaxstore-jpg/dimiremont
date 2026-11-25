@@ -82,6 +82,7 @@ export async function adminApi(request, env, url) {
       if (m === 'DELETE' && id) { await db.prepare(`DELETE FROM media WHERE id = ?`).bind(id).run(); return json({ ok: true }); }
       break;
     case 'export': return exportAll(db);
+    case 'telegram-test': return telegramTest(env);
   }
   return json({ error: 'not_found' }, 404);
 }
@@ -483,4 +484,28 @@ async function exportAll(db) {
   return new Response(JSON.stringify(out), {
     headers: { 'content-type': 'application/json; charset=utf-8', 'content-disposition': `attachment; filename="dimiremont-backup-${now().slice(0, 10)}.json"`, 'cache-control': 'no-store' },
   });
+}
+
+// ---------- перевірка Telegram: шле тестове повідомлення й повертає точну відповідь Telegram ----------
+async function telegramTest(env) {
+  if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, results: [{ chat: '', error: 'Не задано TELEGRAM_BOT_TOKEN' }] });
+  const chats = String(env.TELEGRAM_CHAT_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!chats.length) return json({ ok: false, results: [{ chat: '', error: 'Не задано TELEGRAM_CHAT_ID' }] });
+  const token = String(env.TELEGRAM_BOT_TOKEN).trim();
+  const results = [];
+  let bot = '';
+  try {
+    const me = await (await fetch(`https://api.telegram.org/bot${token}/getMe`)).json();
+    if (!me.ok) return json({ ok: false, results: [{ chat: '', error: 'Токен бота не приймається Telegram: ' + (me.description || 'невідома помилка') }] });
+    bot = '@' + me.result.username;
+  } catch (e) { return json({ ok: false, results: [{ chat: '', error: 'Немає зв’язку з Telegram: ' + String(e && e.message || e) }] }); }
+  for (const chat_id of chats) {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id, text: '✅ Тестове повідомлення з бек-офісу магазину. Сповіщення про замовлення приходитимуть сюди.' }),
+    });
+    const d = await r.json().catch(() => ({}));
+    results.push({ chat: chat_id, ok: !!d.ok, error: d.ok ? '' : (d.description || 'HTTP ' + r.status) });
+  }
+  return json({ ok: results.every((x) => x.ok), bot, results });
 }
