@@ -15,6 +15,13 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "dimiremont-db", "database_id": "cfea4468-eccc-4e99-a190-f88d289fb4c1" }
   ],
+  // Попередній перегляд гілок (wrangler preview) працює з тією самою базою:
+  // поки сайт один, так простіше перевіряти адмінку на справжніх даних.
+  "previews": {
+    "d1_databases": [
+      { "binding": "DB", "database_name": "dimiremont-db", "database_id": "cfea4468-eccc-4e99-a190-f88d289fb4c1" }
+    ]
+  },
   "observability": { "enabled": true },
   "keep_vars": true
 }
