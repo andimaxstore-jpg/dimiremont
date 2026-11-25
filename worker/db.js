@@ -67,9 +67,37 @@ async function init(env) {
  * Фото ставиться лише варіантам без фото, тож завантажене в адмінці не перезаписується.
  */
 async function applyPatches(db) {
+  await patchPhotos(db);
+  await patchRemontFirst(db);
+}
+
+const patchDone = async (db, key) => !!(await db.prepare(`SELECT value FROM settings WHERE key=?`).bind(key).first());
+const patchMark = (db, key) => db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`).bind(key, JSON.stringify(new Date().toISOString()));
+
+/** Одноразово: товари для ремонту — першими на головній і в меню; SEO-тексти категорій (лише порожні поля). */
+async function patchRemontFirst(db) {
+  const key = 'patch_home_remont_v1';
+  if (await patchDone(db, key)) return;
+  const st = [];
+  for (const g of seed.groups) st.push(db.prepare(`UPDATE cat_groups SET sort=? WHERE id=?`).bind(g.sort, g.id));
+  for (const c of seed.categories) {
+    st.push(db.prepare(`UPDATE categories SET description=? WHERE slug=? AND (description IS NULL OR description='')`).bind(c.description || '', c.slug));
+    st.push(db.prepare(`UPDATE categories SET seo_title=? WHERE slug=? AND (seo_title IS NULL OR seo_title='')`).bind(c.seo_title || '', c.slug));
+    st.push(db.prepare(`UPDATE categories SET seo_desc=? WHERE slug=? AND (seo_desc IS NULL OR seo_desc='')`).bind(c.seo_desc || '', c.slug));
+  }
+  const r = await db.prepare(`SELECT value FROM settings WHERE key='home'`).first();
+  let home = {};
+  try { home = r ? JSON.parse(r.value) || {} : {}; } catch { home = {}; }
+  for (const k of ['hero', 'promos_title', 'promos', 'hits', 'seo_title', 'seo_desc', 'seo_heading', 'seo_text']) home[k] = seed.home[k];
+  st.push(db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('home', ?)`).bind(JSON.stringify(home)));
+  st.push(patchMark(db, key));
+  await db.batch(st);
+  await bumpVersion(db);
+}
+
+async function patchPhotos(db) {
   const key = 'patch_photos_remont_v1';
-  const done = await db.prepare(`SELECT value FROM settings WHERE key=?`).bind(key).first();
-  if (done) return;
+  if (await patchDone(db, key)) return;
   const st = photosRemont.map((sku) =>
     db.prepare(`UPDATE variants SET image=? WHERE sku=? AND (image IS NULL OR image='')`).bind(`/img/${sku}.webp`, sku));
   for (let i = 0; i < st.length; i += 100) await db.batch(st.slice(i, i + 100));
@@ -83,7 +111,8 @@ async function fillSeed(db) {
   S(`INSERT OR IGNORE INTO settings (key, value) VALUES ('home', ?)`, JSON.stringify(seed.home));
   for (const g of seed.groups) S(`INSERT OR IGNORE INTO cat_groups (id, name, sort) VALUES (?, ?, ?)`, g.id, g.name, g.sort);
   for (const c of seed.categories)
-    S(`INSERT OR IGNORE INTO categories (id, slug, name, group_id, blurb, sort) VALUES (?, ?, ?, ?, ?, ?)`, c.id, c.slug, c.name, c.group_id, c.blurb, c.sort);
+    S(`INSERT OR IGNORE INTO categories (id, slug, name, group_id, blurb, description, seo_title, seo_desc, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      c.id, c.slug, c.name, c.group_id, c.blurb, c.description || '', c.seo_title || '', c.seo_desc || '', c.sort);
   for (const a of seed.attributes)
     S(`INSERT OR IGNORE INTO attributes (id, name, unit, type, sort) VALUES (?, ?, ?, ?, ?)`, a.id, a.name, a.unit, a.type, a.sort);
   // Явні id + OR IGNORE: якщо два перші запити прийдуть одночасно, дублікатів не буде.

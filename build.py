@@ -406,14 +406,39 @@ def build():
     export_seed(P)
     print(f'{len(P)} товарів, {sum(len(p["variants"]) for p in P)} артикулів, {len(urls)} URL у sitemap')
 
+# ---------- головна: пріоритет — товари для швидкого ремонту ----------
+def home_remont(P, save2):
+    """Блоки головної. Ці ж hero/promos/hits/seo_* worker/db.js дописує в уже наявну базу (patch_home_remont_v1)."""
+    def cat(c): return [p for p in P if p['category'] == c]
+    def lo(c): return money(min(v['price'] for p in cat(c) for v in p['variants']))
+    def n(c): return sum(len(p['variants']) for p in cat(c))
+    return {
+        'seo_title': f'{C.SHOP_NAME} — 3D панелі, самоклеюча плитка, рейки та товари для швидкого ремонту',
+        'seo_desc': 'Самоклеючі 3D панелі, плитка для кухні та ванної, стінові рейки, покриття для підлоги та плівки. Ремонт без пилу і майстрів. Доставка по Україні.',
+        'hero': {'eyebrow': 'Швидкий ремонт без пилу', 'title': 'Оновіть стіни й підлогу за один вечір',
+                 'text': f'Самоклеючі 3D панелі, плитка, рейки та покриття для підлоги: знімаєте плівку, притискаєте до стіни — і готово. 3D панелі від {lo("stinovi-paneli")} ₴ за штуку.',
+                 'btn_text': 'Обрати 3D панелі', 'btn_url': '/kategoriya/stinovi-paneli.html', 'btn2_text': 'Увесь каталог', 'btn2_url': '/katalog.html',
+                 'image': '/img/hero-remont.webp', 'image_alt': '3D панелі під цеглу, рейки та покриття під дерево', 'image_url': '/kategoriya/stinovi-paneli.html'},
+        'promos_title': 'Популярне для ремонту',
+        'promos': [
+            {'tag': f'від {lo("stinovi-paneli")} ₴', 'title': '3D панелі для стін', 'text': f'Понад {n("stinovi-paneli")} дизайнів: цегла, камінь, дерево', 'url': '/kategoriya/stinovi-paneli.html'},
+            {'tag': f'від {lo("plytka")} ₴', 'title': 'Самоклеюча плитка', 'text': 'Фартух кухні та ванна без плиткаря і затирки', 'url': '/kategoriya/plytka.html'},
+            {'tag': f'від {lo("pidloga")} ₴', 'title': 'Покриття для підлоги', 'text': 'Вінілова плитка «ламінат», LVT і ковролін', 'url': '/kategoriya/pidloga.html'}],
+        'show_groups': True, 'hits_title': 'Хіти продажів', 'show_new': True, 'new_title': 'Новинки',
+        'seo_heading': 'Товари для швидкого ремонту та дому',
+        'seo_text': f'<p>{E(C.SHOP_NAME)} — інтернет-магазин товарів для швидкого ремонту: самоклеючих 3D панелей, плитки для кухні та ванної, стінових рейок і молдингів, покриття для підлоги та самоклеючих плівок. Усе це монтується без пилу, клею й майстрів, тому оновити кімнату можна за вихідні.</p>'
+                    f'<p>Також у каталозі є товари для дому: надувні та модульні меблі, стелажі, вологопоглинаючі килимки та акрилові дзеркала. Доставляємо Новою поштою та Укрпоштою по всій Україні.</p>',
+    }
+
 # ---------- початкові дані для бази D1 (бек-офіс) ----------
 def export_seed(P):
     """Пише data/seed.json. Worker заливає його в порожню базу D1 при першому запуску.
     Після цього джерело правди — база, а редагування йде через /admin/."""
     by_slug = {p['slug']: p for p in P}
-    groups = [{'id': i + 1, 'key': k, 'name': v, 'sort': i} for i, (k, v) in enumerate(GROUPS.items())]
+    groups = [{'id': i + 1, 'key': k, 'name': v, 'sort': 0 if k == 'remont' else 1} for i, (k, v) in enumerate(GROUPS.items())]  # ремонт — першим
     gid = {g['key']: g['id'] for g in groups}
-    cats = [{'id': i + 1, 'slug': k, 'name': v[0], 'group_id': gid[v[1]], 'blurb': v[2], 'sort': i} for i, (k, v) in enumerate(CATS.items())]
+    seo = json.load(open(os.path.join(ROOT, 'data/seo_cats.json'), encoding='utf8'))
+    cats = [{'id': i + 1, 'slug': k, 'name': v[0], 'group_id': gid[v[1]], 'blurb': v[2], 'sort': i, **seo.get(k, {})} for i, (k, v) in enumerate(CATS.items())]
     cid = {c['slug']: c['id'] for c in cats}
     attrs = [{'id': 1, 'name': 'Розмір', 'unit': '', 'type': 'text', 'sort': 0},
              {'id': 2, 'name': 'Будова / матеріал', 'unit': '', 'type': 'text', 'sort': 1}]
@@ -443,26 +468,12 @@ def export_seed(P):
     sofa = by_slug['dyvan-naduvnyi']; arm = by_slug['krislo-naduvne']
     save1 = sofa['min'] + arm['min'] - 25998
     save2 = sofa['min'] + 2 * arm['min'] - 35449
-    hits = ['krislo-naduvne', 'kylymok-vologopoglynaiuchyi-60x40', 'dzerkalnyi-dekor-akrylovyi', 'stelazh-universalnyi-yarusy']
-    for c in ('stinovi-paneli', 'plytka', 'reiky-moldyngy', 'pidloga', 'plivky', 'dekoratyvni-plyty'):
+    hits = []
+    for c in ('stinovi-paneli', 'plytka', 'pidloga', 'reiky-moldyngy', 'plivky', 'dekoratyvni-plyty'):
         hits.append(max((p for p in P if p['category'] == c), key=lambda p: len(p['variants']))['slug'])
-    sp = [p for p in P if p['category'] == 'stinovi-paneli']
-    home = {
-        'seo_title': f'{C.SHOP_NAME} — товари для дому та швидкого ремонту',
-        'seo_desc': '3D панелі, самоклеюча плитка, рейки, плівки, підлогові покриття, надувні та модульні меблі, стелажі, килимки й дзеркала. Акції щомісяця, доставка по Україні.',
-        'hero': {'eyebrow': 'Акція місяця', 'title': 'Надувні меблі з насосом у подарунок',
-                 'text': f'До кожного крісла, дивана чи набору — електронасос, гофрований шланг і 5 насадок. Набір «диван + крісло» дешевший за окрему покупку на {money(save1)} ₴.',
-                 'btn_text': 'Обрати набір', 'btn_url': '/tovar/nabir-mebliv-naduvnykh.html', 'btn2_text': 'Увесь каталог', 'btn2_url': '/katalog.html',
-                 'image': '/img/SW-00002656.webp', 'image_alt': 'Набір надувних меблів: диван і крісло', 'image_url': '/tovar/nabir-mebliv-naduvnykh.html'},
-        'promos_title': 'Акції та вигідні пропозиції',
-        'promos': [
-            {'tag': f'−{money(save2)} ₴', 'title': 'Диван + 2 крісла', 'text': f'{money(35449)} ₴ замість {money(sofa["min"] + 2 * arm["min"])} ₴ при окремій покупці', 'url': '/tovar/nabir-mebliv-naduvnykh.html'},
-            {'tag': 'Подарунок', 'title': 'Насос і 5 насадок', 'text': 'До будь-яких надувних меблів', 'url': '/tovar/krislo-naduvne.html'},
-            {'tag': f'від {money(min(p["min"] for p in sp))} ₴', 'title': '3D панелі для стін', 'text': f'Понад {sum(len(p["variants"]) for p in sp)} дизайнів: цегла, камінь, дерево', 'url': '/kategoriya/stinovi-paneli.html'}],
-        'show_groups': True, 'hits_title': 'Хіти продажів', 'hits': hits[:10], 'show_new': True, 'new_title': 'Новинки',
-        'seo_heading': 'Товари для дому та швидкого ремонту',
-        'seo_text': f'<p>{E(C.SHOP_NAME)} — інтернет-магазин самоклеючих 3D панелей, плитки, рейок, плівок і покриттів для підлоги, а також меблів, стелажів, килимків і дзеркал. Оновіть кухню, ванну чи вітальню без пилу та майстрів: більшість товарів монтується на клейовий шар за кілька хвилин.</p>',
-    }
+    hits += ['krislo-naduvne', 'kylymok-vologopoglynaiuchyi-60x40', 'dzerkalnyi-dekor-akrylovyi', 'stelazh-universalnyi-yarusy']
+    home = home_remont(P, save2)
+    home['hits'] = hits[:10]
     pages = [{'id': 1, 'slug': 'dostavka', 'title': 'Доставка і оплата', 'in_footer': 1, 'in_menu': 0, 'sort': 0,
               'seo_desc': f'Умови доставки та оплати: {C.DELIVERY}. {C.PAYMENT}.',
               'content': f'<h2>Доставка</h2><p>{E(C.DELIVERY)}. Відправляємо після підтвердження замовлення менеджером.</p>'
