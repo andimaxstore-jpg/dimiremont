@@ -11,10 +11,9 @@
     // Сторінки збирає Worker з бази; статика (стилі, фото, адмінка) — напряму з site/.
     "run_worker_first": ["/*", "!/assets/*", "!/img/*", "!/admin/*"]
   },
-  // База бек-офісу. Без database_id Wrangler сам створить базу "dimiremont-db" під час першого deploy.
-  // Якщо створюєте вручну (Cloudflare → Storage & Databases → D1), допишіть сюди "database_id".
+  // База бек-офісу (Cloudflare → Storage & Databases → D1 → dimiremont-db).
   "d1_databases": [
-    { "binding": "DB", "database_name": "dimiremont-db" }
+    { "binding": "DB", "database_name": "dimiremont-db", "database_id": "cfea4468-eccc-4e99-a190-f88d289fb4c1" }
   ],
   "observability": { "enabled": true },
   "keep_vars": true
