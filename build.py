@@ -171,6 +171,7 @@ def build():
     shutil.copy(os.path.join(ROOT, 'web/style.css'), os.path.join(OUT, 'assets/style.css'))
     shutil.copy(os.path.join(ROOT, 'web/app.js'), os.path.join(OUT, 'assets/app.js'))
     shutil.copy(os.path.join(ROOT, 'web/favicon.svg'), os.path.join(OUT, 'assets/favicon.svg'))
+    shutil.copytree(os.path.join(ROOT, 'web/admin'), os.path.join(OUT, 'admin'))
     for f in os.listdir(os.path.join(ROOT, 'web/ph')):
         shutil.copy(os.path.join(ROOT, 'web/ph', f), os.path.join(OUT, 'img', f))
     for f in os.listdir(os.path.join(ROOT, 'raw_img')):
@@ -402,7 +403,78 @@ def build():
     open(os.path.join(OUT, 'robots.txt'), 'w').write(f'User-agent: *\nAllow: /\nDisallow: /koshyk.html\n\nSitemap: {C.SITE_URL}/sitemap.xml\n')
     json.dump([{'slug': p['slug'], 'title': p['title'], 'category': p['category'], 'variants': [{'sku': v['sku'], 'price': v['price'], **v['options']} for v in p['variants']]} for p in P],
               open(os.path.join(ROOT, 'data/products_all.json'), 'w', encoding='utf8'), ensure_ascii=False, indent=1)
+    export_seed(P)
     print(f'{len(P)} товарів, {sum(len(p["variants"]) for p in P)} артикулів, {len(urls)} URL у sitemap')
+
+# ---------- початкові дані для бази D1 (бек-офіс) ----------
+def export_seed(P):
+    """Пише data/seed.json. Worker заливає його в порожню базу D1 при першому запуску.
+    Після цього джерело правди — база, а редагування йде через /admin/."""
+    by_slug = {p['slug']: p for p in P}
+    groups = [{'id': i + 1, 'key': k, 'name': v, 'sort': i} for i, (k, v) in enumerate(GROUPS.items())]
+    gid = {g['key']: g['id'] for g in groups}
+    cats = [{'id': i + 1, 'slug': k, 'name': v[0], 'group_id': gid[v[1]], 'blurb': v[2], 'sort': i} for i, (k, v) in enumerate(CATS.items())]
+    cid = {c['slug']: c['id'] for c in cats}
+    attrs = [{'id': 1, 'name': 'Розмір', 'unit': '', 'type': 'text', 'sort': 0},
+             {'id': 2, 'name': 'Будова / матеріал', 'unit': '', 'type': 'text', 'sort': 1}]
+    prods = []
+    for i, p in enumerate(P):
+        av = {}
+        if p['size']: av['1'] = p['size']
+        if p['materials']: av['2'] = p['materials']
+        prods.append({'id': i + 1, 'slug': p['slug'], 'title': p['title'], 'category_id': cid[p['category']],
+                      'features': p['features'], 'gift': p['gift'], 'price_note': p['price_note'],
+                      'is_new': 1 if p['new'] else 0, 'sort': i, 'attrs': av,
+                      'variants': [{'sku': v['sku'], 'price': v['price'], 'options': v['options'],
+                                    'image': '/' + v['img'] if v['img'] else '', 'size': fmt_size(v['size'])} for v in p['variants']]})
+    filters = []
+    for c in cats:
+        items = [p for p in P if p['category'] == c['slug']]
+        filters.append({'category_id': c['id'], 'kind': 'price', 'key': '', 'label': 'Ціна', 'sort': 0})
+        names = []
+        for p in items:
+            for v in p['variants']:
+                for k in v['options']:
+                    if k not in names and k != 'Дизайн': names.append(k)
+        for n, k in enumerate(names):
+            filters.append({'category_id': c['id'], 'kind': 'option', 'key': k, 'label': k, 'sort': n + 1})
+        if any(p['gift'] for p in items):
+            filters.append({'category_id': c['id'], 'kind': 'flag', 'key': 'gift', 'label': 'З подарунком', 'sort': 9})
+    sofa = by_slug['dyvan-naduvnyi']; arm = by_slug['krislo-naduvne']
+    save1 = sofa['min'] + arm['min'] - 25998
+    save2 = sofa['min'] + 2 * arm['min'] - 35449
+    hits = ['krislo-naduvne', 'kylymok-vologopoglynaiuchyi-60x40', 'dzerkalnyi-dekor-akrylovyi', 'stelazh-universalnyi-yarusy']
+    for c in ('stinovi-paneli', 'plytka', 'reiky-moldyngy', 'pidloga', 'plivky', 'dekoratyvni-plyty'):
+        hits.append(max((p for p in P if p['category'] == c), key=lambda p: len(p['variants']))['slug'])
+    sp = [p for p in P if p['category'] == 'stinovi-paneli']
+    home = {
+        'seo_title': f'{C.SHOP_NAME} — товари для дому та швидкого ремонту',
+        'seo_desc': '3D панелі, самоклеюча плитка, рейки, плівки, підлогові покриття, надувні та модульні меблі, стелажі, килимки й дзеркала. Акції щомісяця, доставка по Україні.',
+        'hero': {'eyebrow': 'Акція місяця', 'title': 'Надувні меблі з насосом у подарунок',
+                 'text': f'До кожного крісла, дивана чи набору — електронасос, гофрований шланг і 5 насадок. Набір «диван + крісло» дешевший за окрему покупку на {money(save1)} ₴.',
+                 'btn_text': 'Обрати набір', 'btn_url': '/tovar/nabir-mebliv-naduvnykh.html', 'btn2_text': 'Увесь каталог', 'btn2_url': '/katalog.html',
+                 'image': '/img/SW-00002656.webp', 'image_alt': 'Набір надувних меблів: диван і крісло', 'image_url': '/tovar/nabir-mebliv-naduvnykh.html'},
+        'promos_title': 'Акції та вигідні пропозиції',
+        'promos': [
+            {'tag': f'−{money(save2)} ₴', 'title': 'Диван + 2 крісла', 'text': f'{money(35449)} ₴ замість {money(sofa["min"] + 2 * arm["min"])} ₴ при окремій покупці', 'url': '/tovar/nabir-mebliv-naduvnykh.html'},
+            {'tag': 'Подарунок', 'title': 'Насос і 5 насадок', 'text': 'До будь-яких надувних меблів', 'url': '/tovar/krislo-naduvne.html'},
+            {'tag': f'від {money(min(p["min"] for p in sp))} ₴', 'title': '3D панелі для стін', 'text': f'Понад {sum(len(p["variants"]) for p in sp)} дизайнів: цегла, камінь, дерево', 'url': '/kategoriya/stinovi-paneli.html'}],
+        'show_groups': True, 'hits_title': 'Хіти продажів', 'hits': hits[:10], 'show_new': True, 'new_title': 'Новинки',
+        'seo_heading': 'Товари для дому та швидкого ремонту',
+        'seo_text': f'<p>{E(C.SHOP_NAME)} — інтернет-магазин самоклеючих 3D панелей, плитки, рейок, плівок і покриттів для підлоги, а також меблів, стелажів, килимків і дзеркал. Оновіть кухню, ванну чи вітальню без пилу та майстрів: більшість товарів монтується на клейовий шар за кілька хвилин.</p>',
+    }
+    pages = [{'id': 1, 'slug': 'dostavka', 'title': 'Доставка і оплата', 'in_footer': 1, 'in_menu': 0, 'sort': 0,
+              'seo_desc': f'Умови доставки та оплати: {C.DELIVERY}. {C.PAYMENT}.',
+              'content': f'<h2>Доставка</h2><p>{E(C.DELIVERY)}. Відправляємо після підтвердження замовлення менеджером.</p>'
+                         f'<h2>Оплата</h2><p>{E(C.PAYMENT)}.</p><h2>Повернення</h2><p>Повернення та обмін — протягом 14 днів відповідно до Закону України «Про захист прав споживачів», якщо товар не був у використанні.</p>'
+                         f'<h2>Контакти</h2><p>Телефон: {E(C.PHONE)}</p>'}]
+    settings = {'site_url': C.SITE_URL, 'shop_name': C.SHOP_NAME, 'phone': C.PHONE, 'telegram': C.TELEGRAM, 'viber': C.VIBER,
+                'email': C.EMAIL, 'city': C.CITY, 'delivery': C.DELIVERY, 'payment': C.PAYMENT,
+                'pickup_address': C.PICKUP_ADDRESS, 'pickup_hours': C.PICKUP_HOURS,
+                'colors': {'Бежевий': '#b9a48f', 'Темно-сірий': '#3c3e42', 'Білий': '#f3f3f1', 'Чорний': '#151515'}}
+    seed = {'settings': settings, 'home': home, 'groups': [{k: g[k] for k in ('id', 'name', 'sort')} for g in groups],
+            'categories': cats, 'attributes': attrs, 'products': prods, 'filters': filters, 'pages': pages}
+    json.dump(seed, open(os.path.join(ROOT, 'data/seed.json'), 'w', encoding='utf8'), ensure_ascii=False, separators=(',', ':'))
 
 if __name__ == '__main__':
     build()
