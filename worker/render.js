@@ -21,8 +21,19 @@ export function layout(S, { path, title, desc, body, ld = [], ogImage = '', robo
   const cats = S.cats.filter((c) => c.active);
   const menuPages = S.pages.filter((p) => p.active && p.in_menu);
   const footPages = S.pages.filter((p) => p.active && p.in_footer);
-  const nav = cats.map((c) => `<a href="/kategoriya/${E(c.slug)}.html">${E(c.name)}</a>`).join('') +
-    menuPages.map((p) => `<a href="/${E(p.slug)}.html">${E(p.title)}</a>`).join('');
+  const cnt = new Map();
+  for (const p of S.visible || []) cnt.set(p.category_id, (cnt.get(p.category_id) || 0) + 1);
+  const link = (c) => `<a href="/kategoriya/${E(c.slug)}.html"><span>${E(c.name)}</span><small>${cnt.get(c.id) || 0}</small></a>`;
+  const cols = [];
+  for (const g of S.groups || []) {
+    const cs = cats.filter((c) => c.group_id === g.id);
+    if (cs.length) cols.push(`<div class="mm-col"><h3>${E(g.name)}</h3>${cs.map(link).join('')}</div>`);
+  }
+  const loose = cats.filter((c) => !(S.groups || []).some((g) => g.id === c.group_id));
+  if (loose.length) cols.push(`<div class="mm-col"><h3>Інше</h3>${loose.map(link).join('')}</div>`);
+  if (menuPages.length) cols.push(`<div class="mm-col mm-info"><h3>Покупцям</h3>${menuPages.map((p) => `<a href="/${E(p.slug)}.html"><span>${E(p.title)}</span></a>`).join('')}</div>`);
+  const nav = `<details class="mm"><summary class="mm-btn"><span class="mm-ico" aria-hidden="true"></span>Каталог</summary>
+<nav class="mm-panel" aria-label="Каталог товарів"><div class="wrap mm-in"><a class="mm-all" href="/katalog.html">Усі товари →</a><div class="mm-cols">${cols.join('')}</div></div></nav></details>`;
   const phone = E(st.phone || '');
   const tel = String(st.phone || '').replace(/[^+0-9]/g, '');
   const og = ogImage ? `<meta property="og:image" content="${E(/^https?:/.test(ogImage) ? ogImage : site + href(ogImage))}">` : '';
@@ -43,11 +54,11 @@ ${ld.map((j) => `<script type="application/ld+json">${jsonLd(j)}</script>`).join
 </head><body data-rel="/">
 <header class="top"><div class="wrap top-in">
 <a class="logo" href="/"><span class="logo-mark" aria-hidden="true"></span>${E(st.shop_name)}</a>
+${nav}
 <form class="search" action="/katalog.html" role="search"><label for="q" class="sr">Пошук товарів</label><input id="q" name="q" type="search" placeholder="Пошук: цегла, килимок, стелаж…"></form>
 ${tel ? `<a class="phone" href="tel:${E(tel)}">${phone}</a>` : ''}
 <a class="cart-link" href="/koshyk.html">Кошик <span class="cart-count" data-cart-count>0</span></a>
 </div>
-<nav class="cats wrap" aria-label="Категорії"><a href="/katalog.html" class="all">Усі товари</a>${nav}</nav>
 </header>
 <main>${body}</main>
 <footer class="foot"><div class="wrap foot-in">

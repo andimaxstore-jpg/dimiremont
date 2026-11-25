@@ -345,3 +345,11 @@
     drawCart();
   }
 })();
+
+// Меню «Каталог»: закривати по кліку поза ним і по Esc
+(function () {
+  var mm = document.querySelector('.mm');
+  if (!mm) return;
+  document.addEventListener('click', function (e) { if (mm.open && !mm.contains(e.target)) mm.open = false; });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && mm.open) { mm.open = false; mm.querySelector('summary').focus(); } });
+})();
