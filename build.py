@@ -79,7 +79,7 @@ def load():
                 lab = 'Дизайн ' + (code.split('-')[0] if code.startswith('R') else code)
             else:
                 lab = 'Дизайн ' + v['sku'][-4:].lstrip('0')
-            vs.append(dict(sku=v['sku'], price=price, options={'Дизайн': lab}, img='', size=v['size']))
+            vs.append(dict(sku=v['sku'], price=price, options={'Дизайн': lab}, img=(f"img/{v['sku']}.webp" if os.path.exists(os.path.join(ROOT, 'raw_img', v['sku'] + '.jpg')) else ''), size=v['size']))
         # прибрати однакові назви дизайнів
         labs = {}
         for v in vs:

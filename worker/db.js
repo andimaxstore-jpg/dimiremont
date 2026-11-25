@@ -3,6 +3,7 @@
  * Схема створюється сама при першому запиті (CREATE TABLE IF NOT EXISTS), тож окремих міграцій запускати не треба.
  */
 import seed from '../data/seed.json';
+import photosRemont from '../data/photos_remont.json';
 
 export const SCHEMA_VERSION = '1';
 
@@ -51,12 +52,28 @@ async function init(env) {
   const db = env.DB;
   try {
     const r = await db.prepare(`SELECT value FROM settings WHERE key='schema_version'`).first();
-    if (r && r.value === SCHEMA_VERSION) return;
+    if (r && r.value === SCHEMA_VERSION) { await applyPatches(db); return; }
   } catch { /* таблиці ще немає */ }
   await db.batch(SCHEMA.map((s) => db.prepare(s)));
   const seeded = await db.prepare(`SELECT value FROM settings WHERE key='seeded'`).first();
   if (!seeded) await fillSeed(db);
   await db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)`).bind(SCHEMA_VERSION).run();
+  await applyPatches(db);
+}
+
+/**
+ * Разові оновлення даних у вже заповненій базі. Кожне виконується один раз (позначка в settings).
+ * photos_remont_v1: фото з PDF-каталогу «Товари для швидкого ремонту» (site/img/SW-*.webp).
+ * Фото ставиться лише варіантам без фото, тож завантажене в адмінці не перезаписується.
+ */
+async function applyPatches(db) {
+  const key = 'patch_photos_remont_v1';
+  const done = await db.prepare(`SELECT value FROM settings WHERE key=?`).bind(key).first();
+  if (done) return;
+  const st = photosRemont.map((sku) =>
+    db.prepare(`UPDATE variants SET image=? WHERE sku=? AND (image IS NULL OR image='')`).bind(`/img/${sku}.webp`, sku));
+  for (let i = 0; i < st.length; i += 100) await db.batch(st.slice(i, i + 100));
+  await db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`).bind(key, JSON.stringify(new Date().toISOString())).run();
 }
 
 async function fillSeed(db) {
