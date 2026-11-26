@@ -128,3 +128,18 @@ table.tbl{border-collapse:collapse;width:100%;font-size:.88rem}
 @media print{.side,.savebar,.toolbar,.no-print{display:none!important}.app{display:block}.card{border:0}}
 .co-item.off{opacity:.65}
 .co-item.off:focus-within{opacity:1}
+
+.mrte .rte-bar{align-items:center}
+.mrte .rte-bar select{width:auto;padding:3px 6px;font-size:.8rem;height:auto}
+.mrte-color{position:relative;display:inline-flex;align-items:center;gap:2px;font:700 .85rem system-ui,sans-serif;padding:2px 6px;border-radius:4px;cursor:pointer}
+.mrte-color:hover{background:var(--surface)}
+.mrte-color input{width:22px;height:22px;padding:0;border:0;background:none;cursor:pointer}
+.mrte-area{min-height:180px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;background:#fff;color:#222}
+.mrte-area p{margin:0 0 12px}
+.lbl{font-weight:600;font-size:.9rem}
+.emo-wrap{position:relative;display:inline-block}
+.emo-pop{position:absolute;z-index:30;top:100%;left:0;margin-top:4px;display:grid;grid-template-columns:repeat(8,34px);gap:2px;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.emo-pop button{font-size:20px;line-height:1;width:34px;height:34px;border:0;background:none;border-radius:6px;cursor:pointer}
+.emo-pop button:hover{background:var(--bg)}
+select.sm{width:auto;padding:4px 8px;font-size:.85rem}
+@media (max-width:520px){.emo-pop{grid-template-columns:repeat(6,34px)}}

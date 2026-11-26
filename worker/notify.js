@@ -41,6 +41,7 @@ export function notifyConfig(raw) {
   const c = parse(raw, {}) || {};
   const out = {};
   for (const [k, def] of Object.entries(NOTIFY_DEFAULTS)) out[k] = { ...def, ...(c[k] && typeof c[k] === 'object' ? c[k] : {}) };
+  for (const ev of EVENTS) if (!out[ev].email_html) out[ev].email_html = textToHtml(out[ev].email_text);
   return out;
 }
 
@@ -58,10 +59,11 @@ export function cleanNotify(b) {
   if (out.sms.enabled && !out.sms.sender) throw new Error('Вкажіть ім’я відправника SMS (альфа-ім’я, як зареєстровано в SMS-сервісі)');
   for (const ev of EVENTS) {
     const x = c[ev];
-    out[ev] = { email: !!x.email, sms: !!x.sms, subject: s(x.subject, 200), email_text: s(x.email_text, 4000), sms_text: s(x.sms_text, 480) };
+    const html = sanitizeHtml(x.email_html != null && String(x.email_html).trim() ? x.email_html : textToHtml(x.email_text || NOTIFY_DEFAULTS[ev].email_text));
+    out[ev] = { email: !!x.email, sms: !!x.sms, subject: s(x.subject, 200), email_html: html || textToHtml(NOTIFY_DEFAULTS[ev].email_text), sms_text: s(x.sms_text, 480) };
+    out[ev].email_text = htmlToText(out[ev].email_html).slice(0, 4000);
     if (ev === 'accepted') out[ev].when = x.when === 'new' ? 'new' : 'confirmed';
     if (!out[ev].subject) out[ev].subject = NOTIFY_DEFAULTS[ev].subject;
-    if (!out[ev].email_text) out[ev].email_text = NOTIFY_DEFAULTS[ev].email_text;
     if (!out[ev].sms_text) out[ev].sms_text = NOTIFY_DEFAULTS[ev].sms_text;
   }
   return out;
@@ -103,10 +105,62 @@ export function smsParts(text) {
   return t.length <= one ? 1 : Math.ceil(t.length / multi);
 }
 
-function emailHtml(ev, o, shop, text) {
+
+// ---------- HTML листа з візуального редактора ----------
+const TAGS = new Set(['p', 'br', 'b', 'strong', 'i', 'em', 'u', 's', 'span', 'font', 'a', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'div', 'blockquote', 'hr', 'sub', 'sup']);
+const CSS_OK = new Set(['color', 'background-color', 'font-size', 'font-family', 'font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'text-align', 'line-height']);
+const cleanStyle = (st) => String(st || '').split(';').map((d) => {
+  const i = d.indexOf(':'); if (i < 0) return '';
+  const k = d.slice(0, i).trim().toLowerCase(), v = d.slice(i + 1).trim().replace(/"/g, "'");
+  if (!CSS_OK.has(k) || !v || v.length > 120 || /url\(|expression|javascript:|[<>\\]/i.test(v)) return '';
+  return `${k}: ${v}`;
+}).filter(Boolean).join('; ');
+const unent = (x) => x.replace(/&quot;/g, '"').replace(/&#0*39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+const attrOf = (tag, name) => { const m = new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(tag); return m ? unent(m[2] ?? m[3] ?? m[4] ?? '') : null; };
+const SAFE_HREF = /^(https?:\/\/|mailto:|tel:|\{(track|site)\})/i;
+
+/** Лишає тільки безпечне форматування: теги з білого списку, стилі кольору/шрифту/розміру, посилання http(s)/mailto/tel. */
+export function sanitizeHtml(html) {
+  let h = String(html || '').slice(0, 30000).replace(/<(script|style|iframe|object|embed|head|title)[\s\S]*?<\/\1\s*>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  return h.replace(/<\/?([a-z0-9]+)\b[^>]*>/gi, (tag, nm) => {
+    const name = nm.toLowerCase();
+    if (!TAGS.has(name)) return '';
+    if (tag[1] === '/') return name === 'br' || name === 'hr' ? '' : `</${name}>`;
+    if (name === 'br' || name === 'hr') return `<${name}>`;
+    const at = [];
+    const st = cleanStyle(attrOf(tag, 'style'));
+    if (st) at.push(`style="${esc(st)}"`);
+    if (name === 'font') {
+      const c = attrOf(tag, 'color'), f = attrOf(tag, 'face'), z = attrOf(tag, 'size');
+      if (c && /^#?[0-9a-z]{3,20}$/i.test(c)) at.push(`color="${esc(c)}"`);
+      if (f && /^[\w\s,'-]{1,80}$/.test(f)) at.push(`face="${esc(f)}"`);
+      if (z && /^[1-7]$/.test(z)) at.push(`size="${z}"`);
+    }
+    if (name === 'a') { const u = (attrOf(tag, 'href') || '').trim(); if (SAFE_HREF.test(u)) at.push(`href="${esc(u)}"`, 'target="_blank"'); }
+    const al = attrOf(tag, 'align'); if (al && /^(left|center|right|justify)$/i.test(al)) at.push(`align="${al.toLowerCase()}"`);
+    return `<${name}${at.length ? ' ' + at.join(' ') : ''}>`;
+  }).replace(/<(?!\/?[a-z0-9]+[\s>])/gi, '&lt;').trim();
+}
+/** Звичайний текст (старі шаблони) -> HTML абзаців. */
+export const textToHtml = (text) => String(text || '').split(/\n{2,}/).map((p) => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+/** HTML -> текст для поштових програм без HTML. */
+export const htmlToText = (html) => String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|h[1-3]|li|blockquote)>/gi, '\n\n').replace(/<li[^>]*>/gi, '• ')
+  .replace(/<a [^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (m, u, x) => (x.includes(u) ? x : `${x} (${u})`)).replace(/<[^>]+>/g, '')
+  .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\n{3,}/g, '\n\n').trim();
+/** Підставляє {змінні} у HTML: значення екрануються, {track} і {site} стають посиланнями, якщо стоять у тексті. */
+export function fillHtml(html, v) {
+  return String(html || '').replace(/(href=")?\{(\w+)\}/g, (m, href, k) => {
+    if (!(k in v)) return m;
+    const val = String(v[k]);
+    if (href) return href + esc(val);
+    if (/^https?:\/\//.test(val)) return `<a href="${esc(val)}" target="_blank" style="color:#1f6f5c">${esc(val)}</a>`;
+    return esc(val);
+  });
+}
+
+function emailHtml(ev, o, shop, html) {
   const link = (u) => `<a href="${esc(u)}" style="color:#1f6f5c">${esc(u)}</a>`;
-  const para = (p) => `<p style="margin:0 0 14px">${esc(p).replace(/https?:\/\/[^\s<]+/g, (u) => link(u.replace(/&amp;/g, '&'))).replace(/\n/g, '<br>')}</p>`;
-  const body = String(text).split(/\n{2,}/).map(para).join('');
+  const body = `<div style="font-size:15px;line-height:1.5">${String(html).replace(/<p>/g, '<p style="margin:0 0 14px">')}</div>`;
   let extra = '';
   if (ev === 'accepted' && Array.isArray(o.items) && o.items.length) {
     const rows = o.items.map((i) => `<tr><td style="padding:6px 0;border-bottom:1px solid #eee">${esc(i.title)}${i.opt ? `<br><small style="color:#777">${esc(i.opt)}</small>` : ''}</td>
@@ -193,8 +247,8 @@ export async function sendEvent(env, cfg, shop, ev, o) {
     if (!to) rec.email = { ok: false, skipped: true, error: 'Покупець не вказав email' };
     else if (!EMAIL_RE.test(to)) rec.email = { ok: false, skipped: true, error: 'Неправильний email: ' + to };
     else {
-      const text = fill(e.email_text, v);
-      rec.email = { to, ...(await sendEmail(env, cfg, { to, subject: fill(e.subject, v), text, html: emailHtml(ev, o, shop, text) })) };
+      const body = fillHtml(e.email_html, v);
+      rec.email = { to, ...(await sendEmail(env, cfg, { to, subject: fill(e.subject, v), text: htmlToText(body), html: emailHtml(ev, o, shop, body) })) };
     }
   }
   if (cfg.sms.enabled && e.sms) {
@@ -246,9 +300,9 @@ export async function testNotify(env, db, b) {
   };
   const v = vars(o, shop), e = cfg[ev], out = {};
   if (s(b.email)) {
-    const text = fill(e.email_text, v);
+    const body = fillHtml(e.email_html, v);
     out.email = EMAIL_RE.test(s(b.email))
-      ? { to: s(b.email), ...(await sendEmail(env, cfg, { to: s(b.email), subject: '[Тест] ' + fill(e.subject, v), text, html: emailHtml(ev, o, shop, text) })) }
+      ? { to: s(b.email), ...(await sendEmail(env, cfg, { to: s(b.email), subject: '[Тест] ' + fill(e.subject, v), text: htmlToText(body), html: emailHtml(ev, o, shop, body) })) }
       : { ok: false, error: 'Неправильний email' };
   }
   if (s(b.phone)) out.sms = { to: s(b.phone), ...(await sendSms(env, cfg, { to: s(b.phone), text: fill(e.sms_text, v) })) };

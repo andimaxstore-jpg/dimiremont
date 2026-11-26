@@ -939,6 +939,62 @@
   const smsParts = (t) => { t = String(t || ''); if (!t) return 0; const g = /^[\x20-\x7E\n\r]*$/.test(t); const one = g ? 160 : 70, mu = g ? 153 : 67; return t.length <= one ? 1 : Math.ceil(t.length / mu); };
   const SAMPLE = { name: 'Олена', fullname: 'Петренко Олена', order: '261126-1234', total: '1 250 грн', ttn: '20450012345678', carrier: 'Нова пошта', track: 'https://novaposhta.ua/tracking/?cargo_number=20450012345678', shop: 'Дім і Ремонт', phone: '+380735671290', site: 'https://dimiremont.com.ua' };
   const fillT = (t, v) => String(t || '').replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m));
+  const VARS = [['name', 'Ім’я покупця'], ['fullname', 'ПІБ'], ['order', 'Номер замовлення'], ['total', 'Сума'], ['ttn', 'Номер ТТН'], ['carrier', 'Перевізник'], ['track', 'Посилання на відстеження'], ['shop', 'Назва магазину'], ['phone', 'Ваш телефон'], ['site', 'Сайт']];
+  const EMOJI = '😊 🙂 😉 😍 🥰 🤗 👍 👏 🙏 🤝 💪 ✌️ 👋 🎉 🎁 🛍️ 🛒 📦 🚚 ✈️ 📬 📮 🏠 🏡 🔨 🛠️ 🎨 🖌️ 🧱 🪟 🛋️ 🛏️ 🕯️ 💡 ✨ ⭐ 🌟 🔥 ❤️ 💚 💙 💛 🧡 ✅ ☑️ ✔️ ❗ ⚡ ⏰ 📅 📞 💬 📧 💳 💰 🏷️ 🔖 🆕 🇺🇦 🌸 🌿 ☀️ ❄️ 🎄 🎅'.split(' ');
+  const FONTS = [['Arial, Helvetica, sans-serif', 'Arial'], ['Verdana, Geneva, sans-serif', 'Verdana'], ['Tahoma, Geneva, sans-serif', 'Tahoma'], ['Trebuchet MS, sans-serif', 'Trebuchet'], ['Georgia, serif', 'Georgia'], ['Times New Roman, Times, serif', 'Times New Roman'], ['Courier New, monospace', 'Courier New']];
+  const SIZES = [['2', 'Дрібний'], ['3', 'Звичайний'], ['4', 'Більший'], ['5', 'Великий'], ['6', 'Дуже великий'], ['7', 'Величезний']];
+  let emoClose = null;
+  function emojiPop(btn, onPick) {
+    if (emoClose) emoClose();
+    const pop = document.createElement('div'); pop.className = 'emo-pop';
+    pop.innerHTML = EMOJI.map((e) => `<button type="button">${e}</button>`).join('');
+    btn.parentElement.append(pop);
+    if (btn.getBoundingClientRect().left > innerWidth * 0.55) { pop.style.left = 'auto'; pop.style.right = '0'; }
+    const out = (e) => { if (!pop.contains(e.target) && e.target !== btn) close(); };
+    const close = () => { pop.parentElement && pop.parentElement.removeChild(pop); document.removeEventListener('mousedown', out, true); emoClose = null; };
+    pop.addEventListener('mousedown', (e) => e.preventDefault());
+    pop.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) onPick(b.textContent); });
+    setTimeout(() => document.addEventListener('mousedown', out, true));
+    emoClose = close;
+  }
+  function mailRte(html) {
+    return `<div class="rte mrte"><div class="rte-bar">
+      <select data-mc="fontName" title="Шрифт"><option value="">Шрифт</option>${FONTS.map(([v, l]) => `<option value="${esc(v)}" style="font-family:${esc(v)}">${esc(l)}</option>`).join('')}</select>
+      <select data-mc="fontSize" title="Розмір"><option value="">Розмір</option>${SIZES.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select>
+      <button type="button" data-mc="bold" title="Жирний"><b>Ж</b></button><button type="button" data-mc="italic" title="Курсив"><i>К</i></button><button type="button" data-mc="underline" title="Підкреслений"><u>П</u></button><button type="button" data-mc="strikeThrough" title="Закреслений"><s>З</s></button>
+      <label class="mrte-color" title="Колір тексту">A<input type="color" data-mc="foreColor" value="#c8432f"></label>
+      <label class="mrte-color" title="Колір фону (маркер)"><span style="background:#ffe58a;color:#222;padding:0 3px">М</span><input type="color" data-mc="hiliteColor" value="#ffe58a"></label>
+      <button type="button" data-mc="justifyLeft" title="Ліворуч">Ліворуч</button><button type="button" data-mc="justifyCenter" title="По центру">Центр</button>
+      <button type="button" data-mc="insertUnorderedList" title="Список">• Список</button>
+      <button type="button" data-mc="createLink" title="Посилання">Посилання</button>
+      <span class="emo-wrap"><button type="button" data-mc="emoji" title="Смайлик">😊</button></span>
+      <select data-mc="var" title="Вставити змінну"><option value="">+ Змінна</option>${VARS.map(([k, l]) => `<option value="{${k}}">${esc(l)}</option>`).join('')}</select>
+      <button type="button" data-mc="removeFormat" title="Прибрати форматування">Очистити</button></div>
+      <div class="rte-area mrte-area" contenteditable="true">${html || ''}</div></div>`;
+  }
+  function bindMailRte(box) {
+    const area = $('.mrte-area', box);
+    let saved = null;
+    const save = () => { const s = getSelection(); if (s.rangeCount && area.contains(s.anchorNode)) saved = s.getRangeAt(0).cloneRange(); };
+    const restore = () => { area.focus(); if (saved) { const s = getSelection(); s.removeAllRanges(); s.addRange(saved); } };
+    ['keyup', 'mouseup', 'input'].forEach((ev) => area.addEventListener(ev, save));
+    document.addEventListener('selectionchange', save);
+    const exec = (cmd, arg) => { restore(); document.execCommand('styleWithCSS', false, true); document.execCommand(cmd, false, arg); save(); dirty = true; area.dispatchEvent(new Event('input', { bubbles: true })); };
+    $('.rte-bar', box).addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-mc]'); if (!b) return;
+      const cmd = b.dataset.mc;
+      if (cmd === 'emoji') { emojiPop(b, (em) => exec('insertText', em)); return; }
+      if (cmd === 'createLink') { const u = prompt('Адреса посилання (https://... або {track})', 'https://'); if (u && u !== 'https://') exec('createLink', u); return; }
+      exec(cmd, null);
+    });
+    box.addEventListener('change', (e) => {
+      const x = e.target.closest('[data-mc]'); if (!x || x.tagName === 'BUTTON') return;
+      const v = x.value; if (!v) return;
+      if (x.dataset.mc === 'var') exec('insertText', v); else exec(x.dataset.mc, v);
+      if (x.tagName === 'SELECT') x.value = '';
+    });
+  }
   async function notifyEdit() {
     const d = await api('GET', 'notify');
     let c = d.config;
@@ -952,8 +1008,9 @@
         <div class="checks" style="margin-bottom:10px"><label class="check"><input type="checkbox" data-k="email" ${e.email ? 'checked' : ''}> Email</label><label class="check"><input type="checkbox" data-k="sms" ${e.sms ? 'checked' : ''}> SMS</label></div>
         <div class="rows">
           <label>Тема листа<input data-k="subject" value="${esc(e.subject)}"></label>
-          <label>Текст листа<small>Порожній рядок — новий абзац. ${ev === 'accepted' ? 'Під текстом лист сам додасть список товарів і суму.' : 'Під текстом лист сам додасть кнопку «Відстежити посилку».'}</small><textarea data-k="email_text" rows="6">${esc(e.email_text)}</textarea></label>
+          <div><span class="lbl">Текст листа</span> <small class="hint">${ev === 'accepted' ? 'Під текстом лист сам додасть список товарів і суму.' : 'Під текстом лист сам додасть кнопку «Відстежити посилку».'} Виділіть слова й оберіть жирний, шрифт, розмір чи колір.</small>${mailRte(e.email_html)}</div>
           <label>Текст SMS<small data-cnt></small><textarea data-k="sms_text" rows="2">${esc(e.sms_text)}</textarea></label>
+          <div class="toolbar" style="gap:6px"><span class="emo-wrap"><button type="button" class="btn ghost sm" data-emo-sms>😊 Смайлик у SMS</button></span><select class="sm" data-var-sms><option value="">+ Змінна</option>${VARS.map(([k, l]) => `<option value="{${k}}">${esc(l)}</option>`).join('')}</select><small class="hint">Смайлик у SMS займає 2 символи; форматування в SMS неможливе.</small></div>
           <div class="hint" data-prev></div>
         </div></div>`;
     };
@@ -994,7 +1051,7 @@
       const f = $('#nf');
       const out = { email: { ...c.email }, sms: { ...c.sms }, accepted: { ...c.accepted }, shipped: { ...c.shipped } };
       $$('[name]', f).forEach((el) => { const [a, b] = el.name.split('.'); if (b && out[a]) out[a][b] = el.type === 'checkbox' ? el.checked : el.value; });
-      $$('[data-ev]', f).forEach((card) => { const e = out[card.dataset.ev]; $$('[data-k]', card).forEach((x) => { e[x.dataset.k] = x.type === 'checkbox' ? x.checked : x.value; }); });
+      $$('[data-ev]', f).forEach((card) => { const e = out[card.dataset.ev]; $$('[data-k]', card).forEach((x) => { e[x.dataset.k] = x.type === 'checkbox' ? x.checked : x.value; }); e.email_html = $('.mrte-area', card).innerHTML; });
       return out;
     }
     function updPrev(card) {
@@ -1004,6 +1061,14 @@
     }
     draw();
     const nf = $('#nf');
+    $$('.mrte', nf).forEach(bindMailRte);
+    $$('[data-ev]', nf).forEach((card) => {
+      const ta = $('[data-k=sms_text]', card);
+      const put = (txt) => { const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a; ta.value = ta.value.slice(0, a) + txt + ta.value.slice(b); ta.focus(); ta.selectionStart = ta.selectionEnd = a + txt.length; dirty = true; updPrev(card); };
+      const eb = $('[data-emo-sms]', card);
+      eb.addEventListener('click', () => emojiPop(eb, put));
+      $('[data-var-sms]', card).addEventListener('change', (e) => { if (e.target.value) put(e.target.value); e.target.value = ''; });
+    });
     nf.addEventListener('input', (e) => { dirty = true; const card = e.target.closest('[data-ev]'); if (card) updPrev(card); });
     nf.addEventListener('change', () => { dirty = true; });
     nf.addEventListener('submit', async (e) => {
