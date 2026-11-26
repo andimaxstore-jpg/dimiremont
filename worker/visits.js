@@ -1,7 +1,9 @@
 /**
  * Власний облік відвідувань сайту (без cookie, без сторонніх лічильників, без персональних даних).
  *
- * Кожен перегляд сторінки вітрини — один рядок у таблиці visits (D1).
+ * Кожен перегляд сторінки вітрини — один рядок у таблиці visits (D1). Рахується лише тоді, коли сторінка
+ * в браузері виконала JavaScript і надіслала позначку на /api/v (роботи прев'ю посилань цього не роблять),
+ * і запит не з дата-центру (сервери Amazon, Google, Meta, Hetzner тощо).
  * Відвідувач = хеш (IP + браузер + дата + секретна «сіль»), обрізаний до 16 символів.
  * Хеш щодня інший, тож людину не можна відстежити між днями, а IP ніде не зберігається
  * (як у Plausible / Cloudflare Web Analytics). Тому «відвідувачі» = унікальні за кожен день.
@@ -64,27 +66,41 @@ async function visitorId(db, day, ip, ua) {
   return [...new Uint8Array(buf).slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Записати перегляд сторінки (викликається через ctx.waitUntil, щоб не гальмувати сайт). */
-export async function trackView(request, env, url, status) {
-  if (request.method !== 'GET' || status !== 200) return;
+// Хмарні сервери й дата-центри: звідти ходять роботи, сканери й прев'ю посилань, а не покупці.
+// (Cloudflare, Akamai і Fastly не входять: через них працюють VPN і iCloud Private Relay справжніх людей.)
+const DATACENTER = /amazon|\baws\b|google cloud|google llc|microsoft|azure|facebook|meta platforms|digitalocean|hetzner|\bovh|linode|akamai connected|oracle|alibaba|tencent|vultr|choopa|contabo|leaseweb|scaleway|m247|datacamp|cdn77|hostinger|ionos|g-core|gcore|psychz|quadranet|colocrossing|servers\.com|zenlayer|huawei cloud|hostroyale|selectel|timeweb|aeza|stark industries|frantech|buyvm|netcup|hostwinds|ultahost|interserver|cherry servers|clouvider|tzulo|velia|worldstream|serverion|hivelocity|choopa|packet|equinix|rackspace|ibm cloud|softlayer|yandex|apple inc/i;
+const DATACENTER_ASN = new Set([16509, 14618, 8987, 15169, 396982, 19527, 8075, 32934, 63293, 14061, 24940, 16276, 63949, 31898, 45102, 132203, 20473, 51167, 60781, 12876, 9009, 36352, 46606, 212238, 202425, 62240, 136907]);
+
+/** Відвідування від сторінки (скрипт BEACON у render.js), записується у фоні. */
+export async function trackBeacon(request, env, url, raw) {
   const h = request.headers;
+  // Лише з наших сторінок: браузер сам ставить ці заголовки, підробити їх зі сторінки іншого сайту не можна.
+  const origin = h.get('origin');
+  if (origin && origin !== url.origin) return;
+  const site = h.get('sec-fetch-site');
+  if (site && site !== 'same-origin') return;
   const ua = h.get('user-agent') || '';
-  if (!ua || BOT.test(ua)) return;
-  const purpose = (h.get('sec-purpose') || h.get('purpose') || h.get('x-moz') || '').toLowerCase();
-  if (purpose.includes('prefetch') || purpose.includes('prerender')) return;
-  if (h.get('sec-fetch-dest') && h.get('sec-fetch-dest') !== 'document') return;
+  if (!ua || BOT.test(ua) || !/mozilla/i.test(ua)) return;
+  const cf = request.cf || {};
+  if (DATACENTER_ASN.has(+cf.asn) || DATACENTER.test(String(cf.asOrganization || ''))) return;
   if (await isAuthed(request, env)) return; // власник магазину в адмінці
-  const db = env.DB;
-  const ref = h.get('referer') || '';
+  let d = {};
+  try { d = JSON.parse(String(raw || '').slice(0, 4000)) || {}; } catch { return; }
+  const path = String(d.p || '');
+  if (!path.startsWith('/') || path.startsWith('/api/') || path.startsWith('/admin')) return;
+  let page;
+  try { page = new URL(path + (typeof d.q === 'string' && d.q.startsWith('?') ? d.q : ''), url.origin); } catch { return; }
+  const ref = typeof d.r === 'string' ? d.r : '';
   let internal = false;
   try { internal = !!ref && new URL(ref).hostname === url.hostname; } catch { internal = false; }
-  const [src, refHost] = internal ? ['', ''] : sourceOf(url, ref);
+  const [src, refHost] = internal ? ['', ''] : sourceOf(page, ref);
+  const db = env.DB;
   const now = new Date();
   const day = kyivDay(now);
   const vid = await visitorId(db, day, h.get('cf-connecting-ip') || '', ua);
-  const cf = request.cf || {};
-  await db.prepare(`INSERT INTO visits (ts, day, vid, path, entry, src, ref, device, country, city) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-    .bind(now.toISOString(), day, vid, decodeURIComponent(url.pathname).slice(0, 200), internal ? 0 : 1, src, refHost.slice(0, 100),
+  let p = page.pathname; try { p = decodeURIComponent(p); } catch { /* як є */ }
+  await db.prepare(`INSERT INTO visits (ts, day, vid, path, entry, src, ref, device, country, city, js) VALUES (?,?,?,?,?,?,?,?,?,?,1)`)
+    .bind(now.toISOString(), day, vid, p.slice(0, 200), internal ? 0 : 1, src, refHost.slice(0, 100),
       deviceOf(ua), String(cf.country || '').slice(0, 2), String(cf.city || '').slice(0, 60)).run();
 }
 
@@ -108,7 +124,8 @@ export async function visitsReport(db, url, S) {
   if (!DAY_RE.test(from || '')) from = addDays(to, -6);
   if (from > to) [from, to] = [to, from];
   if (from < addDays(to, -400)) from = addDays(to, -400);
-  const W = `day >= ? AND day <= ?`;
+  // Старі записи з сервера (js=0) не з України — це роботи прев'ю посилань, не рахуємо їх.
+  const W = `day >= ? AND day <= ? AND (js = 1 OR country = 'UA')`;
   const b = (st) => st.bind(from, to);
   const [tot, daily, pages, srcs, refs, dev, geo, ord] = await db.batch([
     b(db.prepare(`SELECT COUNT(*) AS views, COUNT(DISTINCT day || vid) AS visitors, COALESCE(SUM(entry),0) AS visits FROM visits WHERE ${W}`)),
@@ -121,7 +138,7 @@ export async function visitsReport(db, url, S) {
     db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS sum FROM orders WHERE created_at >= ? AND created_at < ? AND status != 'cancelled'`).bind(kyivStartUtc(from), kyivStartUtc(addDays(to, 1))),
   ]);
   // Чистимо дані, старші за 13 місяців, щоб база не росла безкінечно.
-  await db.prepare(`DELETE FROM visits WHERE day < ?`).bind(addDays(today, -400)).run();
+  await db.prepare(`DELETE FROM visits WHERE day < ? OR (js = 0 AND country != 'UA')`).bind(addDays(today, -400)).run();
   const title = (p) => {
     let m = /^\/tovar\/([a-z0-9-]+)/.exec(p); if (m && S) { const x = S.bySlug.get(m[1]); if (x) return x.title; }
     m = /^\/kategoriya\/([a-z0-9-]+)/.exec(p); if (m && S) { const x = S.catBySlug.get(m[1]); if (x) return x.name; }

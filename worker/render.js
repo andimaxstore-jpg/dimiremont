@@ -19,6 +19,30 @@ const USER_ICO = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="t
 
 const FONTS = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">';
 
+// Соцмережі в підвалі: посилання задаються в адмінці (Налаштування → Соцмережі), порожні не показуються.
+// Значки намальовані простими лініями (24×24), колір бере від тексту підвалу.
+const IC = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+export const SOCIALS = [
+  ['facebook', 'Facebook', IC('<path d="M14 21v-8h3l.5-3.5H14V7.8c0-1 .4-1.8 1.9-1.8H17.6V3c-.4-.1-1.6-.2-2.9-.2-2.9 0-4.7 1.7-4.7 4.9v1.8H7V13h3v8"/>')],
+  ['instagram', 'Instagram', IC('<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r=".6" fill="currentColor"/>')],
+  ['tiktok', 'TikTok', IC('<path d="M14 3v11.5a3.5 3.5 0 1 1-3.5-3.5"/><path d="M14 3c.4 2.6 2.2 4.4 5 4.6"/>')],
+  ['telegram', 'Telegram', IC('<path d="M21 4 3 11l6 2.2L18 7l-7 7.5V20l3.2-3.6L18 19z"/>')],
+  ['viber', 'Viber', IC('<path d="M12 3c5 0 8.5 2.3 8.5 7.5S17 18 12 18c-.8 0-1.5 0-2.2-.2L6 21v-4C4 15.6 3.5 13 3.5 10.5 3.5 5.3 7 3 12 3z"/><path d="M9.3 7.6c.4-.3.9-.2 1.1.2l.7 1.3c.2.4.1.8-.2 1l-.4.4c.4 1 1.2 1.8 2.2 2.2l.4-.4c.3-.3.7-.4 1-.2l1.3.7c.4.2.5.7.2 1.1-.6.9-1.6 1.3-2.6.8a8 8 0 0 1-4.1-4.1c-.5-1 0-2 .4-3z"/>')],
+  ['youtube', 'YouTube', IC('<rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="m10 9 5 3-5 3z" fill="currentColor"/>')],
+  ['pinterest', 'Pinterest', IC('<circle cx="12" cy="12" r="9"/><path d="M10.5 20.5 12.6 12M9.6 14.4c-.8-.9-1-2-.8-3.1.4-2 2.2-3.3 4.2-3.1 2 .2 3.3 1.8 3.1 3.9-.2 2.4-1.7 4-3.4 3.8-1-.1-1.6-.8-1.3-1.9"/>')],
+  ['threads', 'Threads', IC('<path d="M16.5 11.2c-.6-2.4-2.4-3.4-4.4-3.4-2.6 0-4.1 1.8-4.1 4.3 0 2.7 1.4 4.6 4.4 4.6 2.2 0 4-1.2 4-3.2 0-2.3-2.6-2.8-4.3-2.6-1.7.2-2.6 1.2-2.4 2.3.2 1.1 1.4 1.6 2.7 1.4 2.4-.4 3.2-2.6 3-5.3"/><path d="M19.5 8.5C18.3 5 15.6 3 12 3 6.8 3 3.5 6.6 3.5 12S6.8 21 12 21c3.8 0 6.6-2 7.6-5"/>')],
+];
+
+function socialBlock(st) {
+  const links = SOCIALS.filter(([k]) => /^https:\/\//i.test(String(st['social_' + k] || ''))).map(([k, name, icon]) =>
+    `<a class="soc" href="${E(st['social_' + k])}" target="_blank" rel="noopener" aria-label="${name}" title="${name}">${icon}</a>`);
+  return links.length ? `<div class="socials"><h3>Підписуйтесь на нас</h3><div class="soc-row">${links.join('')}</div></div>` : '';
+}
+
+// Лічильник відвідувань: шле позначку лише справжній браузер, що виконав JavaScript
+// (роботи соцмереж, які лише читають сторінку для прев'ю, і автоматизовані браузери не рахуються).
+const BEACON = `<script>(function(){if(navigator.webdriver)return;var d=document,sent=0;function s(){if(sent||d.visibilityState!=='visible')return;sent=1;try{var b=JSON.stringify({p:location.pathname,q:location.search,r:d.referrer});if(!(navigator.sendBeacon&&navigator.sendBeacon('/api/v',b)))fetch('/api/v',{method:'POST',body:b,keepalive:true})}catch(e){}}s();if(!sent)d.addEventListener('visibilitychange',s)})();</script>`;
+
 export function layout(S, { path, title, desc, body, ld = [], ogImage = '', robots = 'index,follow' }) {
   const st = S.settings;
   const site = String(st.site_url || '').replace(/\/$/, '');
@@ -69,10 +93,11 @@ ${tel ? `<a class="phone" href="tel:${E(tel)}">${phone}</a>` : ''}
 </header>
 <main>${body}</main>
 <footer class="foot"><div class="wrap foot-in">
-<div><div class="logo">${E(st.shop_name)}</div><p>Товари для дому та швидкого ремонту. ${E(st.delivery)}.</p></div>
+<div><div class="logo">${E(st.shop_name)}</div><p>Товари для дому та швидкого ремонту. ${E(st.delivery)}.</p>${socialBlock(st)}</div>
 <div><h3>Покупцям</h3><a href="/katalog.html">Каталог</a>${footPages.map((p) => `<a href="/${E(p.slug)}.html">${E(p.title)}</a>`).join('')}<a href="/koshyk.html">Кошик</a></div>
 <div><h3>Контакти</h3><p>${phone}</p>${st.email ? `<p>${E(st.email)}</p>` : ''}<p>${E(st.city)}</p></div>
 </div><div class="wrap copy">© ${new Date().getFullYear()} ${E(st.shop_name)}. Ціни вказані в гривнях.</div></footer>
+${path === '404.html' ? '' : BEACON}
 <script src="/assets/app.js" defer></script>
 </body></html>`;
 }
