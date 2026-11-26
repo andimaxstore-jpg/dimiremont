@@ -5,6 +5,7 @@
 import seed from '../data/seed.json';
 import photosRemont from '../data/photos_remont.json';
 import guidePage from '../data/guide_page.json';
+import returnsPage from '../data/returns_page.json';
 
 export const SCHEMA_VERSION = '1';
 
@@ -87,6 +88,7 @@ async function applyPatches(db) {
   await patchPhotos(db);
   await patchRemontFirst(db);
   await patchGuide(db);
+  await patchReturns(db);
   if (!(await patchDone(db, 'patch_free_ship_v1')))
     await db.batch([db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('free_ship_from', ?)`).bind(JSON.stringify('5000')), patchMark(db, 'patch_free_ship_v1')]);
 }
@@ -118,6 +120,30 @@ async function patchRemontFirst(db) {
   try { home = r ? JSON.parse(r.value) || {} : {}; } catch { home = {}; }
   for (const k of ['hero', 'promos_title', 'promos', 'hits', 'seo_title', 'seo_desc', 'seo_heading', 'seo_text']) home[k] = seed.home[k];
   st.push(db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('home', ?)`).bind(JSON.stringify(home)));
+  st.push(patchMark(db, key));
+  await db.batch(st);
+  await bumpVersion(db);
+}
+
+/**
+ * Одноразово: сторінка «Гарантія та повернення» (якщо такої адреси ще немає) + посилання на неї
+ * з розділу «Повернення» сторінки «Доставка і оплата» (лише якщо там ще немає посилання). Далі все редагується в адмінці.
+ */
+async function patchReturns(db) {
+  const key = 'patch_returns_v1';
+  if (await patchDone(db, key)) return;
+  const g = returnsPage;
+  const st = [
+    db.prepare(`INSERT OR IGNORE INTO pages (slug, title, content, seo_title, seo_desc, in_menu, in_footer, sort, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`)
+      .bind(g.slug, g.title, g.content, g.seo_title, g.seo_desc, g.in_menu, g.in_footer, g.sort),
+  ];
+  const d = await db.prepare(`SELECT id, content FROM pages WHERE slug='dostavka'`).first();
+  const c = String(d?.content || '');
+  const m = /<h2[^>]*>\s*Повернення[^<]*<\/h2>\s*<p>[\s\S]*?<\/p>/i.exec(c);
+  if (d && m && !c.includes(`/${g.slug}.html`)) {
+    const add = `<p><a href="/${g.slug}.html">Детальні умови повернення, обміну та гарантії →</a></p>`;
+    st.push(db.prepare(`UPDATE pages SET content=? WHERE id=?`).bind(c.slice(0, m.index + m[0].length) + add + c.slice(m.index + m[0].length), d.id));
+  }
   st.push(patchMark(db, key));
   await db.batch(st);
   await bumpVersion(db);
