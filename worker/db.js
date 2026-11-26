@@ -85,6 +85,11 @@ async function applyPatches(db) {
   await db.batch([db.prepare(`CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, name TEXT NOT NULL, rating INTEGER NOT NULL,
      text TEXT DEFAULT '', status TEXT DEFAULT 'pending', ip TEXT DEFAULT '', created_at TEXT NOT NULL)`), db.prepare(`CREATE INDEX IF NOT EXISTS reviews_prod ON reviews(product_id, status)`)]);
   await patchAccounts(db);
+  // Журнал сповіщень покупцям (email/SMS) у замовленні.
+  if (!(await patchDone(db, 'patch_notify_v1'))) {
+    try { await db.prepare(`ALTER TABLE orders ADD COLUMN notify TEXT DEFAULT ''`).run(); } catch { /* колонка вже є */ }
+    await patchMark(db, 'patch_notify_v1').run();
+  }
   await patchPhotos(db);
   await patchRemontFirst(db);
   await patchGuide(db);
