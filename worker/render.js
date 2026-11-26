@@ -527,7 +527,7 @@ export function accountPage(S) {
     d: Object.fromEntries(cfg.delivery.map((d) => [d.id, d.title])), p: Object.fromEntries(cfg.payment.map((x) => [x.id, x.title])),
     on: activeDelivery(cfg).filter((d) => ['np', 'np_courier', 'up', 'pickup'].includes(d.id)).map((d) => d.id),
   });
-  const body = `<section class="wrap block acc" data-account data-phone="${E(st.phone || '')}" data-tel="${E(tel)}" data-checkout="${E(names)}">
+  const body = `<section class="wrap block acc" data-account data-phone="${E(st.phone || '')}" data-tel="${E(tel)}" data-ship-cfg="${E(names)}">
 <h1>Особистий кабінет</h1>
 <noscript><p>Для кабінету потрібно увімкнути JavaScript у браузері.</p></noscript>
 <div data-acc-root><p class="muted">Завантаження…</p></div>
