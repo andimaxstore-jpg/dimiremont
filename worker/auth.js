@@ -5,6 +5,7 @@
  */
 const COOKIE = 'dr_adm';
 const TTL = 14 * 24 * 3600;
+const DAY = 24 * 3600 * 1000;
 const enc = new TextEncoder();
 
 async function hmac(env, msg) {
@@ -42,15 +43,17 @@ export async function login(req, env) {
   const ip = clientIp(req);
   const since = Date.now() - 15 * 60 * 1000;
   const db = env.DB;
-  const r = await db.prepare(`SELECT COUNT(*) AS n FROM login_attempts WHERE ip = ? AND ts > ?`).bind(ip, since).first();
-  if (r && r.n >= 10) return { status: 429, body: { error: 'too_many', message: 'Забагато спроб. Спробуйте за 15 хвилин.' } };
+  // Ліміти невдалих спроб з однієї адреси: 10 за 15 хвилин і 30 за добу (підбір пароля стає безнадійно довгим).
+  const r = await db.prepare(`SELECT SUM(ts > ?) AS n, COUNT(*) AS day FROM login_attempts WHERE ip = ? AND ts > ?`).bind(since, ip, Date.now() - DAY).first();
+  if (r && (r.n >= 10 || r.day >= 30)) return { status: 429, body: { error: 'too_many', message: r.day >= 30 ? 'Забагато невдалих спроб. Спробуйте завтра.' : 'Забагато спроб. Спробуйте за 15 хвилин.' } };
   let body = {};
   try { body = await req.json(); } catch {}
   const ok = await safeEqual(env, String(body.password || ''), env.ADMIN_PASSWORD);
   if (!ok) {
     await db.batch([
       db.prepare(`INSERT INTO login_attempts (ip, ts) VALUES (?, ?)`).bind(ip, Date.now()),
-      db.prepare(`DELETE FROM login_attempts WHERE ts < ?`).bind(since),
+      // Старі записи прибираємо лише після 2 діб: таблицю ділять і інші ліміти (кабінет, замовлення) з довшими вікнами.
+      db.prepare(`DELETE FROM login_attempts WHERE ts < ?`).bind(Date.now() - 2 * DAY),
     ]);
     return { status: 401, body: { error: 'bad_password', message: 'Невірний пароль' } };
   }

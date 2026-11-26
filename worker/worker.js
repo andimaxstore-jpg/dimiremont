@@ -18,7 +18,7 @@ import { ensureDb, loadStore } from './db.js';
 import { adminApi } from './admin-api.js';
 import * as R from './render.js';
 import cartTpl from './cart.html';
-import { accountApi, currentCustomer, rememberFromOrder, productsBySlugs } from './account.js';
+import { accountApi, currentCustomer, rememberFromOrder, productsBySlugs, tooMany, attempt } from './account.js';
 import { processOrder } from './notify.js';
 import { trackView } from './visits.js';
 import { checkoutConfig, activeDelivery, paymentsFor, paymentTitle, CITY_KINDS, BRANCH_KINDS, ADDRESS_KINDS } from './checkout.js';
@@ -32,8 +32,26 @@ const json = (data, status = 200, extra = {}) =>
     headers: { 'content-type': 'application/json; charset=utf-8', ...extra },
   });
 
+// Заголовки безпеки для всіх відповідей Worker: сайт не можна вбудувати в чужу сторінку,
+// браузер не «вгадує» тип файлів, у чужі сайти не йде повна адреса сторінки, лише HTTPS.
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'SAMEORIGIN',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'strict-transport-security': 'max-age=15552000',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+};
+
 export default {
   async fetch(request, env, ctx) {
+    const res = await handle(request, env, ctx);
+    const out = new Response(res.body, res);
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!out.headers.has(k)) out.headers.set(k, v);
+    return out;
+  },
+};
+
+async function handle(request, env, ctx) {
     const url = new URL(request.url);
     try {
       if (env.DB) await ensureDb(env);
@@ -56,8 +74,7 @@ export default {
       if (url.pathname.startsWith('/api/')) return json({ error: 'server_error', message: String(e && e.message || e) }, 500);
       return env.ASSETS.fetch(request); // аварійно — стара статична версія сторінки
     }
-  },
-};
+}
 
 async function api(request, env, ctx, url) {
   if (url.pathname === '/api/order' && request.method === 'POST') return await order(request, env, ctx);
@@ -236,6 +253,14 @@ async function order(request, env, ctx) {
   let o;
   try { o = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
   if (o.website) return json({ ok: true, id: 'x' }); // пастка для ботів
+  // Захист від засипання фейковими замовленнями (і від витрат на SMS/листи на чужі номери):
+  // з однієї адреси не більше 5 замовлень за 10 хвилин і 20 за добу. Звичайний покупець цього не помітить.
+  const ip = request.headers.get('cf-connecting-ip') || '';
+  if (env.DB && ip) {
+    const key = 'o:' + ip;
+    if (await tooMany(env.DB, key, 5, 600e3) || await tooMany(env.DB, key, 20, 86400e3))
+      return json({ error: 'too_many', message: 'Забагато замовлень з цього пристрою. Зателефонуйте нам, і ми все оформимо.' }, 429);
+  }
   const c = o.customer || {}, d = o.delivery || {}, raw = Array.isArray(o.items) ? o.items.slice(0, 100) : [];
   const phone = String(c.phone || '').replace(/[^\d+]/g, '');
   const errors = [];
@@ -267,14 +292,17 @@ async function order(request, env, ctx) {
     const S = await loadStore(env);
     const bySku = new Map();
     for (const p of S.products) for (const v of p.variants) bySku.set(v.sku, [p, v]);
+    // Товари, яких немає в базі (вигаданий артикул і ціна з браузера), у замовлення не потрапляють.
+    if (bySku.size) items = items.filter((i) => bySku.has(i.sku));
+    if (!items.length) return json({ error: 'validation', fields: ['items'] }, 422);
     items = items.map((i) => {
-      const hit = bySku.get(i.sku);
-      if (!hit) return i;
-      const [p, v] = hit;
+      const [p, v] = bySku.get(i.sku) || [];
+      if (!p) return i;
       return { ...i, title: p.title, opt: Object.entries(v.options).map(([k, x]) => k + ': ' + x).join(', ') || i.opt, price: +v.price };
     });
   }
-  const id = new Date().toISOString().slice(2, 10).replace(/-/g, '') + '-' + Math.floor(1000 + Math.random() * 9000);
+  const newId = () => new Date().toISOString().slice(2, 10).replace(/-/g, '') + '-' + (1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+  let id = newId();
   const total = items.reduce((s, i) => s + i.qty * i.price, 0);
   const name = [c.lastName, c.firstName, c.middleName].filter(Boolean).map((x) => cut(x, 60)).join(' ');
   const delivery = {
@@ -293,10 +321,15 @@ async function order(request, env, ctx) {
   if (env.DB) {
     try {
       const at = new Date().toISOString();
-      await env.DB.prepare(`INSERT INTO orders (id, created_at, status, name, phone, email, delivery, payment, comment, call_me, items, total, updated_at, customer_id)
-        VALUES (?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(id, at, name, '+380' + phone.slice(-9), cut(c.email, 200), JSON.stringify(delivery), cut(o.payment, 40), comment, o.callMe === false ? 0 : 1, JSON.stringify(items), total, at, cust ? cust.id : null).run();
-      saved = true;
+      // Номер випадковий у межах дня; якщо раптом збігся з уже наявним — беремо інший.
+      for (let t = 0; t < 5 && !saved; t++) {
+        if (t) id = newId();
+        const r = await env.DB.prepare(`INSERT OR IGNORE INTO orders (id, created_at, status, name, phone, email, delivery, payment, comment, call_me, items, total, updated_at, customer_id)
+          VALUES (?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(id, at, name, '+380' + phone.slice(-9), cut(c.email, 200), JSON.stringify(delivery), cut(o.payment, 40), comment, o.callMe === false ? 0 : 1, JSON.stringify(items), total, at, cust ? cust.id : null).run();
+        saved = !!r.meta.changes;
+      }
+      if (saved && ip) await attempt(env.DB, 'o:' + ip);
     } catch (e) { console.log('order_save_failed', String(e)); }
     if (saved && cust) await rememberFromOrder(env, cust, o);
   }
