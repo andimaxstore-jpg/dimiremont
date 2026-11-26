@@ -73,6 +73,7 @@ async function storefront(request, env, url) {
   if (S.redirects.has(p)) return Response.redirect(new URL(S.redirects.get(p), url).toString(), 301);
   if (p === '/' || p === '/index.html' || p === '/index') return page(R.homePage(S));
   if (p === '/sitemap.xml') return new Response(R.sitemap(S), { headers: { 'content-type': 'application/xml; charset=utf-8' } });
+  if (p === '/google-feed.xml') return new Response(request.method === 'HEAD' ? null : R.googleFeed(S), { headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=600' } });
   if (p === '/robots.txt') return new Response(R.robots(S), { headers: { 'content-type': 'text/plain; charset=utf-8' } });
   // /katalog і /katalog.html — одна сторінка (як було з html_handling auto-trailing-slash)
   const clean = p.replace(/\/$/, '').replace(/\.html$/, '');
