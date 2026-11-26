@@ -126,3 +126,5 @@ table.tbl{border-collapse:collapse;width:100%;font-size:.88rem}
 .warn{background:#fbf1dc;color:#6b4700;border-radius:6px;padding:10px 12px;margin-bottom:12px}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .warn{background:#3a2e12;color:#f0d08a}}
 @media print{.side,.savebar,.toolbar,.no-print{display:none!important}.app{display:block}.card{border:0}}
+.co-item.off{opacity:.65}
+.co-item.off:focus-within{opacity:1}

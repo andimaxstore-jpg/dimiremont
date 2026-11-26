@@ -194,25 +194,42 @@
     });
 
     // --- спосіб доставки
-    var method = 'np', city = null, branch = null, manual = false;
+    var method = '', kind = '', city = null, branch = null, manual = false;
+    // Способи доставки/оплати приходять із адмінки: data-kind визначає, які поля просити.
+    function radioOf(m) { return form.querySelector('input[name="method"][value="' + m + '"]'); }
+    function needCity() { return ['np', 'np_courier', 'up', 'address'].indexOf(kind) >= 0; }
+    function needBranch() { return kind === 'np' || kind === 'up'; }
+    function needAddr() { return kind === 'np_courier' || kind === 'address'; }
     function shipText() {
       var free = +document.body.getAttribute('data-free-ship') || 0;
-      var el = document.querySelector('[data-ship]');
-      if (!el) return;
-      if (method === 'pickup' || (free && total() >= free)) el.textContent = 'безкоштовно';
-      else el.textContent = 'за тарифами перевізника' + (free ? ' (безкоштовно від ' + money(free) + ')' : '');
+      var el = document.querySelector('[data-ship]'), r = radioOf(method);
+      if (!el || !r) return;
+      var cost = r.getAttribute('data-cost') || '', thr = r.hasAttribute('data-threshold');
+      if (thr && free && total() >= free) el.textContent = 'безкоштовно';
+      else el.textContent = (cost || 'уточнить менеджер') + (thr && free ? ' (безкоштовно від ' + money(free) + ')' : '');
     }
     function setMethod(m) {
-      method = m;
+      var r = radioOf(m);
+      if (!r) return;
+      method = m; kind = r.getAttribute('data-kind') || 'none';
       checkout.querySelectorAll('[data-for]').forEach(function (el) { el.hidden = el.getAttribute('data-for').split(' ').indexOf(m) < 0; });
-      var pickup = m === 'pickup';
-      checkout.querySelector('[data-pay="cod"]').hidden = pickup;
-      checkout.querySelector('[data-pay="cash"]').hidden = !pickup;
+      var first = null;
+      checkout.querySelectorAll('[data-pay]').forEach(function (l) {
+        var f = l.getAttribute('data-for-d');
+        l.hidden = !!f && f.split(' ').indexOf(m) < 0;
+        if (!l.hidden && !first) first = l;
+      });
       var pay = form.querySelector('input[name="payment"]:checked');
-      if (pay && pay.closest('label').hidden) form.querySelector('input[name="payment"][value="' + (pickup ? 'cash' : 'cod') + '"]').checked = true;
+      if ((!pay || pay.closest('label').hidden) && first) first.querySelector('input').checked = true;
+      payInfo();
       shipText();
       resetCity();
     }
+    function payInfo() {
+      var pay = form.querySelector('input[name="payment"]:checked');
+      checkout.querySelectorAll('[data-pay-info]').forEach(function (el) { el.hidden = !pay || el.getAttribute('data-pay-info') !== pay.value; });
+    }
+    form.querySelectorAll('input[name="payment"]').forEach(function (r) { r.addEventListener('change', payInfo); });
     form.querySelectorAll('input[name="method"]').forEach(function (r) { r.addEventListener('change', function () { setMethod(r.value); }); });
 
     // --- автодоповнення
@@ -253,19 +270,19 @@
       onType: function () { city = null; branch = null; branches = null; brAc.input.value = ''; if (!manual) brAc.input.disabled = true; },
       source: function (q, show) {
         if (q.length < 2) return show([], 'Введіть щонайменше 2 літери');
-        var src = method === 'up' ? 'up/cities' : 'np/cities';
+        var src = kind === 'up' ? 'up/cities' : 'np/cities';
         getJSON(API + src + '?q=' + encodeURIComponent(q)).then(function (d) {
           if (d.manual) { setManual(true); return show([], 'Довідник недоступний, впишіть вручну'); }
           setManual(false);
           show(d.items.map(function (c) { return { title: c.name, sub: c.label, value: c.name, id: c.id, label: c.label }; }), d.items.length ? '' : 'Нічого не знайдено');
         }).catch(function () { setManual(true); show([], 'Довідник недоступний, впишіть вручну'); });
       },
-      onPick: function (c) { city = c; branch = null; branches = null; brAc.input.value = ''; brAc.input.disabled = false; brAc.input.placeholder = 'Оберіть або введіть номер'; cityAc.input.classList.remove('invalid'); if (method !== 'np_courier') { brAc.input.focus(); } }
+      onPick: function (c) { city = c; branch = null; branches = null; brAc.input.value = ''; brAc.input.disabled = false; brAc.input.placeholder = 'Оберіть або введіть номер'; cityAc.input.classList.remove('invalid'); if (needBranch()) { brAc.input.focus(); } }
     });
     var branches = null;
     function loadBranches(cb) {
       if (branches) return cb(branches);
-      var src = method === 'up' ? 'up/offices' : 'np/warehouses';
+      var src = kind === 'up' ? 'up/offices' : 'np/warehouses';
       getJSON(API + src + '?city=' + encodeURIComponent(city.id)).then(function (d) {
         if (d.manual) { setManual(true); branches = []; return cb([]); }
         branches = d.items; cb(branches);
@@ -294,9 +311,9 @@
       var t = 'Замовлення з сайту\n\n';
       o.items.forEach(function (i) { t += '• ' + i.title + ' (' + i.opt + ', ' + i.sku + ') × ' + i.qty + ' = ' + money(i.price * i.qty) + '\n'; });
       t += '\nРазом: ' + money(total()) + '\n\n' + o.customer.lastName + ' ' + o.customer.firstName + '\nТелефон: ' + o.customer.phone +
-        '\nДоставка: ' + ({ np: 'Нова пошта', np_courier: 'Кур’єр НП', up: 'Укрпошта', pickup: 'Самовивіз' }[o.delivery.method]) +
+        '\nДоставка: ' + o.delivery.title +
         (o.delivery.city ? ', ' + o.delivery.city : '') + (o.delivery.branch ? ', ' + o.delivery.branch : '') + (o.delivery.address ? ', ' + o.delivery.address : '') +
-        (o.comment ? '\nКоментар: ' + o.comment : '');
+        (o.paymentTitle ? '\nОплата: ' + o.paymentTitle : '') + (o.comment ? '\nКоментар: ' + o.comment : '');
       return t;
     }
     form.addEventListener('submit', function (e) {
@@ -309,22 +326,24 @@
       need(document.getElementById('o-first'), (f.get('firstName') || '').trim().length > 1);
       need(phone, normPhone(phone.value).length === 9);
       var cityName = cityAc.input.value.trim(), brName = brAc.input.value.trim();
-      if (method !== 'pickup') need(cityAc.input, manual ? cityName.length > 1 : !!city);
-      if (method === 'np' || method === 'up') need(brAc.input, manual ? brName.length > 0 : !!branch);
-      if (method === 'np_courier') need(document.getElementById('o-addr'), (f.get('address') || '').trim().length > 4);
+      if (!method) { err.textContent = 'Оберіть спосіб доставки.'; err.hidden = false; return; }
+      if (needCity()) need(cityAc.input, (manual || kind === 'address') ? cityName.length > 1 : !!city);
+      if (needBranch()) need(brAc.input, manual ? brName.length > 0 : !!branch);
+      if (needAddr()) need(document.getElementById('o-addr'), (f.get('address') || '').trim().length > 4);
       if (bad.length) { err.textContent = 'Перевірте виділені поля.'; err.hidden = false; bad[0].focus(); return; }
       err.hidden = true;
       var o = {
         website: f.get('website'),
         customer: { lastName: f.get('lastName').trim(), firstName: f.get('firstName').trim(), phone: '+380' + normPhone(phone.value), email: (f.get('email') || '').trim() },
         delivery: {
-          method: method,
-          city: method === 'pickup' ? '' : (city ? (city.label || city.title) : cityName),
-          branch: (method === 'np' || method === 'up') ? (branch ? branch.title + (method === 'up' && branch.sub ? ', ' + branch.sub : '') : brName) : '',
-          address: method === 'np_courier' ? f.get('address').trim() : '',
-          pickupAddress: method === 'pickup' ? checkout.querySelector('.pickup b').textContent : ''
+          method: method, title: radioOf(method).getAttribute('data-title'),
+          city: needCity() ? (city ? (city.label || city.title) : cityName) : '',
+          branch: needBranch() ? (branch ? branch.title + (kind === 'up' && branch.sub ? ', ' + branch.sub : '') : brName) : '',
+          address: needAddr() ? f.get('address').trim() : '',
+          pickupAddress: kind === 'pickup' ? ((checkout.querySelector('[data-pickup-addr]') || {}).textContent || '') : ''
         },
         payment: f.get('payment'),
+        paymentTitle: (form.querySelector('input[name="payment"]:checked') || { getAttribute: function () { return ''; } }).getAttribute('data-title'),
         comment: (f.get('comment') || '').trim(),
         callMe: !f.get('nocall'),
         items: load().map(function (i) { return { sku: i.sku, title: i.title, opt: i.opt, qty: i.qty, price: i.price }; }),
@@ -368,7 +387,8 @@
         var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r);
       });
     });
-    setMethod('np');
+    var r0 = form.querySelector('input[name="method"]:checked') || form.querySelector('input[name="method"]');
+    if (r0) { r0.checked = true; setMethod(r0.value); }
     drawCart();
 
     // --- кабінет: підставляємо дані покупця та останню доставку

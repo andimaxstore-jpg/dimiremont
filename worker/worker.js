@@ -19,6 +19,7 @@ import { adminApi } from './admin-api.js';
 import * as R from './render.js';
 import cartTpl from './cart.html';
 import { accountApi, currentCustomer, rememberFromOrder, productsBySlugs } from './account.js';
+import { checkoutConfig, activeDelivery, paymentsFor, paymentTitle, CITY_KINDS, BRANCH_KINDS, ADDRESS_KINDS } from './checkout.js';
 
 const NP_URL = 'https://api.novaposhta.ua/v2.0/json/';
 const UP_URL = 'https://www.ukrposhta.ua/address-classifier-ws';
@@ -234,10 +235,18 @@ async function order(request, env) {
   if (!c.lastName || String(c.lastName).length > 60) errors.push('lastName');
   if (!/^\+?380\d{9}$/.test(phone)) errors.push('phone');
   if (!raw.length) errors.push('items');
-  if (!['np', 'np_courier', 'up', 'pickup'].includes(d.method)) errors.push('delivery');
-  if (d.method !== 'pickup' && !d.city) errors.push('city');
-  if ((d.method === 'np' || d.method === 'up') && !d.branch) errors.push('branch');
-  if (d.method === 'np_courier' && !d.address) errors.push('address');
+  // Способи доставки/оплати — з адмінки; без бази — вбудовані за замовчуванням.
+  let settings = {};
+  if (env.DB) { try { settings = (await loadStore(env)).settings; } catch {} }
+  const cfg = checkoutConfig(settings);
+  const dm = activeDelivery(cfg).find((x) => x.id === d.method);
+  if (!dm) errors.push('delivery');
+  else {
+    if (CITY_KINDS.includes(dm.kind) && !d.city) errors.push('city');
+    if (BRANCH_KINDS.includes(dm.kind) && !d.branch) errors.push('branch');
+    if (ADDRESS_KINDS.includes(dm.kind) && !d.address) errors.push('address');
+    if (!paymentsFor(cfg, dm.id).some((p) => p.id === o.payment)) errors.push('payment');
+  }
   if (errors.length) return json({ error: 'validation', fields: errors }, 422);
 
   const cut = (v, n = 300) => String(v == null ? '' : v).slice(0, n);
@@ -261,13 +270,14 @@ async function order(request, env) {
   const total = items.reduce((s, i) => s + i.qty * i.price, 0);
   const name = [c.lastName, c.firstName, c.middleName].filter(Boolean).map((x) => cut(x, 60)).join(' ');
   const delivery = {
-    method: d.method, city: cut(d.city), branch: cut(d.branch), address: cut(d.address),
-    pickupAddress: d.method === 'pickup' ? cut(d.pickupAddress) : '',
+    method: dm.id, title: dm.title, paymentTitle: paymentTitle(cfg, o.payment),
+    city: CITY_KINDS.includes(dm.kind) ? cut(d.city) : '', branch: BRANCH_KINDS.includes(dm.kind) ? cut(d.branch) : '',
+    address: ADDRESS_KINDS.includes(dm.kind) ? cut(d.address) : '',
+    pickupAddress: dm.kind === 'pickup' ? cut(settings.pickup_address || d.pickupAddress) : '',
   };
   const comment = cut(o.comment, 1000);
-  let freeFrom = 0;
-  if (env.DB) { try { freeFrom = +(await loadStore(env)).settings.free_ship_from || 0; } catch {} }
-  const freeShip = d.method !== 'pickup' && freeFrom > 0 && total >= freeFrom;
+  const freeFrom = +settings.free_ship_from || 0;
+  const freeShip = dm.threshold && freeFrom > 0 && total >= freeFrom;
 
   let saved = false;
   // Покупець увійшов у кабінет — замовлення з'явиться в його вкладці «Замовлення».
@@ -325,15 +335,15 @@ async function notifyTelegram(env, o) {
   const d = o.delivery;
   const lines = o.items.map((i, n) =>
     `${n + 1}. ${esc(i.title)}${i.opt ? ' (' + esc(i.opt) + ')' : ''}\n   <code>${esc(i.sku)}</code> × ${i.qty} = ${money(i.qty * i.price)}`);
-  const method = { np: 'Нова пошта, відділення/поштомат', np_courier: "Нова пошта, кур'єр", up: 'Укрпошта', pickup: 'Самовивіз' }[d.method];
-  const pay = { cod: 'Накладений платіж', card: 'Оплата на рахунок / картку', cash: 'Готівкою при самовивозі' }[o.payment] || esc(o.payment);
-  const deliv = d.method === 'pickup' ? esc(d.pickupAddress || '') : [esc(d.city), esc(d.branch || d.address)].filter(Boolean).join(', ');
+  const method = esc(d.title || d.method);
+  const pay = esc(d.paymentTitle || o.payment);
+  const deliv = d.pickupAddress ? esc(d.pickupAddress) : [esc(d.city), esc(d.branch || d.address)].filter(Boolean).join(', ');
   const text =
     `🛒 <b>Нове замовлення №${o.id}</b>\n\n` +
     `<b>Клієнт:</b> ${esc(o.name)}\n` +
     `<b>Телефон:</b> ${esc(o.phone)}\n` +
     (o.email ? `<b>Email:</b> ${esc(o.email)}\n` : '') +
-    `\n<b>Доставка:</b> ${method}\n${deliv}\n` +
+    `\n<b>Доставка:</b> ${method}\n${deliv ? deliv + '\n' : ''}` +
     (o.freeShip ? '🎁 <b>Безкоштовна доставка</b> (сума від порогу)\n' : '') +
     `<b>Оплата:</b> ${pay}\n` +
     (o.comment ? `<b>Коментар:</b> ${esc(o.comment)}\n` : '') +

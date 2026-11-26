@@ -5,6 +5,8 @@
 
 export const E = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;' }[c]));
 export const money = (v) => String(Math.round(+v || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+import { checkoutConfig, activeDelivery, paymentsFor, freeShipFrom, thresholdCarrier, CITY_KINDS, BRANCH_KINDS, ADDRESS_KINDS } from './checkout.js';
+
 const jsonLd = (o) => JSON.stringify(o).replace(/</g, '\\u003c');
 const lowerFirst = (s) => (s ? s[0].toLowerCase() + s.slice(1) : '');
 const stripTags = (s) => String(s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -54,7 +56,7 @@ export function layout(S, { path, title, desc, body, ld = [], ogImage = '', robo
 ${FONTS}
 <link rel="stylesheet" href="/assets/style.css">
 ${ld.map((j) => `<script type="application/ld+json">${jsonLd(j)}</script>`).join('')}
-</head><body data-rel="/"${+st.free_ship_from ? ` data-free-ship="${+st.free_ship_from}"` : ''}>
+</head><body data-rel="/"${freeShipFrom(st) ? ` data-free-ship="${freeShipFrom(st)}"` : ''}>
 <header class="top"><div class="wrap top-in">
 <a class="logo" href="/"><span class="logo-mark" aria-hidden="true"></span>${E(st.shop_name)}</a>
 ${nav}
@@ -233,7 +235,7 @@ export function productPage(S, p) {
     },
   };
   // Вартість — за тарифами перевізника; від порогу free_ship_from — безкоштовно (тоді вказуємо 0 ₴).
-  const freeFrom = +S.settings.free_ship_from || 0;
+  const freeFrom = freeShipFrom(S.settings);
   const shipFor = (v) => (freeFrom && +v.price >= freeFrom
     ? { ...shipping, shippingRate: { '@type': 'MonetaryAmount', value: '0', currency: 'UAH' } } : shipping);
   const retUrl = returnsUrl(S);
@@ -388,7 +390,7 @@ ${h.image ? `<a class="hero-img" href="${E(href(h.image_url || h.btn_url || '/ka
 ${hits.length ? `<section class="wrap block"><div class="row-head"><h2>${E(H.hits_title || 'Хіти продажів')}</h2><a href="/katalog.html">Усі товари →</a></div><div class="grid">${hits.map(card).join('')}</div></section>` : ''}
 ${news.length ? `<section class="wrap block"><div class="row-head"><h2>${E(H.new_title || 'Новинки')}</h2></div><div class="grid">${news.map(card).join('')}</div></section>` : ''}
 <section class="wrap block perks"><div><b>${S.visible.length} товарів, ${nVar} артикулів</b><span>Кожна картка об’єднує всі кольори й малюнки одного товару</span></div>
-<div><b>${+st.free_ship_from ? `Безкоштовна доставка від ${money(st.free_ship_from)} ₴` : 'Доставка'}</b><span>${E(st.delivery)}</span></div><div><b>Оплата</b><span>${E(st.payment)}</span></div></section>
+<div><b>${freeShipFrom(st) ? `Безкоштовна доставка від ${money(freeShipFrom(st))} ₴` : 'Доставка'}</b><span>${E(st.delivery)}</span></div><div><b>Оплата</b><span>${E(st.payment)}</span></div></section>
 ${stripTags(H.seo_text) ? `<section class="wrap block seo">${H.seo_heading ? `<h2>${E(H.seo_heading)}</h2>` : ''}${H.seo_text}</section>` : ''}`;
   const org = { '@context': 'https://schema.org', '@type': 'Store', name: st.shop_name, url: site + '/', telephone: st.phone, priceRange: '₴₴', areaServed: 'UA' };
   const siteLd = {
@@ -462,14 +464,37 @@ export function notFoundPage(S) {
   });
 }
 
-/** Кошик: розмітка форми замовлення та сама, що генерував build.py (на неї спирається app.js). */
+/** Текст із адмінки -> абзаци (без HTML; посилання http(s) клікабельні). */
+const infoHtml = (txt) => String(txt || '').split(/\n{2,}/).map((para) => para.trim()).filter(Boolean)
+  .map((para) => `<p>${E(para).replace(/\n/g, '<br>').replace(/https?:\/\/[^\s<]+/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`)}</p>`).join('');
+
+/** Кошик: розмітка форми замовлення та сама, що генерував build.py (на неї спирається app.js). Способи доставки/оплати — з адмінки. */
 export function cartPage(S, tpl) {
   const st = S.settings;
   const tg = st.telegram ? `<a class="btn" data-tg href="https://t.me/${E(st.telegram)}" target="_blank" rel="noopener">Надіслати в Telegram</a>` : '';
   const vb = st.viber ? `<a class="btn ghost" href="viber://chat?number=%2B${E(st.viber)}">Написати у Viber</a>` : '';
+  const cfg = checkoutConfig(st);
+  const dl = activeDelivery(cfg);
+  const free = freeShipFrom(st);
+  const ids = (kinds) => dl.filter((d) => kinds.includes(d.kind)).map((d) => d.id).join(' ') || '-';
+  const radios = dl.map((d, i) => `<label class="radio"><input type="radio" name="method" value="${E(d.id)}" data-kind="${E(d.kind)}" data-title="${E(d.title)}"` +
+    ` data-cost="${E(d.free ? 'безкоштовно' : d.cost_note)}"${d.threshold ? ' data-threshold' : ''}${i ? '' : ' checked'}>` +
+    `<span><b>${E(d.title)}</b>${d.subtitle ? `<small>${E(d.subtitle)}</small>` : ''}</span></label>`).join('\n');
+  const pickupIds = dl.filter((d) => d.kind === 'pickup').map((d) => d.id).join(' ');
+  const pickup = pickupIds ? `<div class="pickup" data-for="${E(pickupIds)}"><b data-pickup-addr>${E(st.pickup_address || '')}</b>` +
+    `<p>${[st.pickup_hours, st.phone ? `Телефон: ${st.phone}` : ''].filter(Boolean).map(E).join('. ')}</p></div>` : '';
+  const dInfo = dl.filter((d) => d.info).map((d) => `<div class="co-info" data-for="${E(d.id)}">${infoHtml(d.info)}</div>`).join('');
+  const pays = cfg.payment.filter((p) => p.active && dl.some((d) => paymentsFor(cfg, d.id).includes(p)));
+  const payRadios = pays.map((p) => `<label class="radio" data-pay="${E(p.id)}" data-for-d="${E((p.for || []).join(' '))}">` +
+    `<input type="radio" name="payment" value="${E(p.id)}" data-title="${E(p.title)}"><span><b>${E(p.title)}</b>${p.subtitle ? `<small>${E(p.subtitle)}</small>` : ''}</span></label>`).join('\n');
+  const pInfo = pays.filter((p) => p.info).map((p) => `<div class="co-info" data-pay-info="${E(p.id)}" hidden>${infoHtml(p.info)}</div>`).join('');
+  const d0 = dl[0] || {};
   const body = tpl
-    .replaceAll('{{PICKUP_ADDRESS}}', E(st.pickup_address))
-    .replaceAll('{{PICKUP_HOURS}}', E(st.pickup_hours))
+    .replace('{{DELIVERY_RADIOS}}', radios)
+    .replace('{{FOR_CITY}}', E(ids(CITY_KINDS))).replace('{{FOR_BRANCH}}', E(ids(BRANCH_KINDS))).replace('{{FOR_ADDR}}', E(ids(ADDRESS_KINDS)))
+    .replace('{{PICKUP_BLOCK}}', pickup).replace('{{DELIVERY_INFO}}', dInfo)
+    .replace('{{PAYMENT_RADIOS}}', payRadios).replace('{{PAYMENT_INFO}}', pInfo)
+    .replace('{{SHIP_NOTE}}', E(d0.free ? 'безкоштовно' : (d0.cost_note || '') + (d0.threshold && free ? ` (безкоштовно від ${money(free)} ₴)` : '')))
     .replaceAll('{{PHONE}}', E(st.phone))
     .replace('{{TG}}', tg).replace('{{VB}}', vb)
     .replace('{{RETURNS}}', returnsUrl(S) ? ` Умови <a href="${E(returnsUrl(S))}">повернення та гарантії</a>.` : '');
@@ -496,7 +521,13 @@ export function robots(S) {
 export function accountPage(S) {
   const st = S.settings;
   const tel = String(st.phone || '').replace(/[^+0-9]/g, '');
-  const body = `<section class="wrap block acc" data-account data-phone="${E(st.phone || '')}" data-tel="${E(tel)}">
+  // Назви способів доставки/оплати з адмінки + які з вбудованих увімкнені (для «Доставки за замовчуванням»).
+  const cfg = checkoutConfig(st);
+  const names = JSON.stringify({
+    d: Object.fromEntries(cfg.delivery.map((d) => [d.id, d.title])), p: Object.fromEntries(cfg.payment.map((x) => [x.id, x.title])),
+    on: activeDelivery(cfg).filter((d) => ['np', 'np_courier', 'up', 'pickup'].includes(d.id)).map((d) => d.id),
+  });
+  const body = `<section class="wrap block acc" data-account data-phone="${E(st.phone || '')}" data-tel="${E(tel)}" data-checkout="${E(names)}">
 <h1>Особистий кабінет</h1>
 <noscript><p>Для кабінету потрібно увімкнути JavaScript у браузері.</p></noscript>
 <div data-acc-root><p class="muted">Завантаження…</p></div>
@@ -526,7 +557,7 @@ export function googleFeed(S) {
   const st = S.settings;
   const site = String(st.site_url || '').replace(/\/$/, '');
   const abs = (u) => (/^https?:/i.test(u) ? u : site + img(u));
-  const freeFrom = +st.free_ship_from || 0;
+  const freeFrom = freeShipFrom(st), carrier = thresholdCarrier(st);
   const propOf = (o) => (o === 'Колір' ? 'color' : ['Розмір', 'Яруси'].includes(o) ? 'size' : 'pattern');
   // Один артикул постачальника інколи стоїть у двох картках (різні розміри) — тоді id = артикул + номер картки.
   const skuN = new Map();
@@ -564,7 +595,7 @@ export function googleFeed(S) {
         ['g:min_handling_time', '0'], ['g:max_handling_time', '1'],
       ];
       // Безкоштовна доставка від порогу; для решти — тарифи перевізника з налаштувань доставки в Merchant Center.
-      const ship = freeFrom && price >= freeFrom ? '<g:shipping><g:country>UA</g:country><g:service>Нова пошта</g:service><g:price>0.00 UAH</g:price></g:shipping>' : '';
+      const ship = freeFrom && price >= freeFrom ? '<g:shipping><g:country>UA</g:country><g:service>${X(carrier)}</g:service><g:price>0.00 UAH</g:price></g:shipping>' : '';
       items.push(`<item>${f.map(([k, val]) => `<${k}>${X(val)}</${k}>`).join('')}${ship}</item>`);
     }
   }
