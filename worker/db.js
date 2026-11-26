@@ -33,7 +33,7 @@ const SCHEMA = [
      active INTEGER DEFAULT 1)`,
   `CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, status TEXT DEFAULT 'new', name TEXT, phone TEXT,
      email TEXT, delivery TEXT, payment TEXT, comment TEXT, call_me INTEGER DEFAULT 1, items TEXT, total REAL DEFAULT 0,
-     admin_note TEXT DEFAULT '', ttn TEXT DEFAULT '', telegram_ok INTEGER DEFAULT 0, updated_at TEXT)`,
+     admin_note TEXT DEFAULT '', ttn TEXT DEFAULT '', telegram_ok INTEGER DEFAULT 0, updated_at TEXT, customer_id INTEGER)`,
   `CREATE INDEX IF NOT EXISTS orders_created ON orders(created_at)`,
   `CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, mime TEXT, name TEXT, size INTEGER, data BLOB, created_at TEXT)`,
   `CREATE TABLE IF NOT EXISTS redirects (path TEXT PRIMARY KEY, target TEXT NOT NULL)`,
@@ -41,6 +41,15 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, name TEXT NOT NULL, rating INTEGER NOT NULL,
      text TEXT DEFAULT '', status TEXT DEFAULT 'pending', ip TEXT DEFAULT '', created_at TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS reviews_prod ON reviews(product_id, status)`,
+];
+
+const ACCOUNT_SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, email TEXT, first_name TEXT DEFAULT '', last_name TEXT DEFAULT '',
+     middle_name TEXT DEFAULT '', pass_hash TEXT NOT NULL, delivery TEXT, admin_note TEXT DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT, last_login TEXT)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS customers_phone ON customers(phone)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS customers_email ON customers(email)`,
+  `CREATE TABLE IF NOT EXISTS wishlist (customer_id INTEGER NOT NULL, product_id INTEGER NOT NULL, created_at TEXT, PRIMARY KEY (customer_id, product_id))`,
+  `CREATE TABLE IF NOT EXISTS secrets (key TEXT PRIMARY KEY, value TEXT)`,
 ];
 
 let ready = null;
@@ -73,10 +82,19 @@ async function applyPatches(db) {
   // Таблиця відгуків (додана після запуску) — створюється, якщо її ще немає.
   await db.batch([db.prepare(`CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, name TEXT NOT NULL, rating INTEGER NOT NULL,
      text TEXT DEFAULT '', status TEXT DEFAULT 'pending', ip TEXT DEFAULT '', created_at TEXT NOT NULL)`), db.prepare(`CREATE INDEX IF NOT EXISTS reviews_prod ON reviews(product_id, status)`)]);
+  await patchAccounts(db);
   await patchPhotos(db);
   await patchRemontFirst(db);
   if (!(await patchDone(db, 'patch_free_ship_v1')))
     await db.batch([db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('free_ship_from', ?)`).bind(JSON.stringify('5000')), patchMark(db, 'patch_free_ship_v1')]);
+}
+
+/** Кабінет покупця: таблиці клієнтів і збережених товарів, прив'язка замовлень до клієнта. */
+async function patchAccounts(db) {
+  if (await patchDone(db, 'patch_accounts_v1')) return;
+  await db.batch(ACCOUNT_SCHEMA.map((s) => db.prepare(s)));
+  try { await db.prepare(`ALTER TABLE orders ADD COLUMN customer_id INTEGER`).run(); } catch { /* колонка вже є */ }
+  await db.batch([db.prepare(`CREATE INDEX IF NOT EXISTS orders_customer ON orders(customer_id)`), patchMark(db, 'patch_accounts_v1')]);
 }
 
 const patchDone = async (db, key) => !!(await db.prepare(`SELECT value FROM settings WHERE key=?`).bind(key).first());

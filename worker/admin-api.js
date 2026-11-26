@@ -3,6 +3,7 @@
  */
 import { isAuthed, login, logoutCookie } from './auth.js';
 import { bumpVersion } from './db.js';
+import { hashPassword, normPhone, normEmail, publicCustomer, customerOrder } from './account.js';
 
 const json = (data, status = 200, extra = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extra } });
@@ -96,6 +97,16 @@ export async function adminApi(request, env, url) {
       }
       if (id && m === 'DELETE') return write(async () => { await db.prepare(`DELETE FROM reviews WHERE id = ?`).bind(+id).run(); return json({ ok: true }); });
       break;
+    case 'customers':
+      if (!id && m === 'GET') return listCustomers(db, url);
+      if (id && seg[2] === 'link' && m === 'POST') return linkCustomerOrder(db, +id, body);
+      if (id && m === 'GET') return getCustomer(db, +id);
+      if (id && m === 'PATCH') return updateCustomer(db, +id, body);
+      if (id && m === 'DELETE') {
+        await db.batch([db.prepare(`UPDATE orders SET customer_id = NULL WHERE customer_id = ?`).bind(+id), db.prepare(`DELETE FROM wishlist WHERE customer_id = ?`).bind(+id), db.prepare(`DELETE FROM customers WHERE id = ?`).bind(+id)]);
+        return json({ ok: true });
+      }
+      break;
     case 'export': return exportAll(db);
     case 'telegram-test': return telegramTest(env);
   }
@@ -146,7 +157,7 @@ async function listOrders(db, url) {
   const page = Math.max(1, int(url.searchParams.get('page'), 1));
   const per = 50;
   const [rows, total] = await db.batch([
-    db.prepare(`SELECT id, created_at, status, name, phone, delivery, payment, total, ttn, items FROM orders ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).bind(...a, per, (page - 1) * per),
+    db.prepare(`SELECT id, created_at, status, name, phone, delivery, payment, total, ttn, items, customer_id FROM orders ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).bind(...a, per, (page - 1) * per),
     db.prepare(`SELECT COUNT(*) AS n FROM orders ${where}`).bind(...a),
   ]);
   return json({
@@ -492,8 +503,10 @@ async function uploadMedia(db, request) {
 
 // ---------- резервна копія ----------
 async function exportAll(db) {
-  const tables = ['settings', 'cat_groups', 'categories', 'products', 'variants', 'attributes', 'product_attrs', 'category_filters', 'pages', 'orders', 'redirects', 'reviews'];
-  const res = await db.batch(tables.map((t) => db.prepare(`SELECT * FROM ${t}`)));
+  const tables = ['settings', 'cat_groups', 'categories', 'products', 'variants', 'attributes', 'product_attrs', 'category_filters', 'pages', 'orders', 'redirects', 'reviews', 'customers', 'wishlist'];
+  // Хеші паролів клієнтів у копію не потрапляють.
+  const sel = (t) => (t === 'customers' ? `SELECT id, phone, email, first_name, last_name, middle_name, delivery, admin_note, created_at, updated_at, last_login FROM customers` : `SELECT * FROM ${t}`);
+  const res = await db.batch(tables.map((t) => db.prepare(sel(t))));
   const out = { exported_at: now() };
   tables.forEach((t, i) => { out[t] = res[i].results; });
   return new Response(JSON.stringify(out), {
@@ -523,4 +536,67 @@ async function telegramTest(env) {
     results.push({ chat: chat_id, ok: !!d.ok, error: d.ok ? '' : (d.description || 'HTTP ' + r.status) });
   }
   return json({ ok: results.every((x) => x.ok), bot, results });
+}
+
+// ---------- клієнти (особисті кабінети) ----------
+async function listCustomers(db, url) {
+  const q = str(url.searchParams.get('q'), 100);
+  const w = [], a = [];
+  if (q) {
+    const digits = q.replace(/\D/g, '');
+    w.push(`(c.first_name LIKE ? OR c.last_name LIKE ? OR c.email LIKE ?${digits.length >= 3 ? ' OR c.phone LIKE ?' : ''})`);
+    a.push(`%${q}%`, `%${q}%`, `%${q}%`);
+    if (digits.length >= 3) a.push(`%${digits}%`);
+  }
+  const rows = (await db.prepare(`SELECT c.id, c.first_name, c.last_name, c.phone, c.email, c.created_at, c.last_login,
+      (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS orders, (SELECT COALESCE(SUM(total),0) FROM orders o WHERE o.customer_id = c.id AND o.status != 'cancelled') AS spent,
+      (SELECT COUNT(*) FROM wishlist x WHERE x.customer_id = c.id) AS saved
+    FROM customers c ${w.length ? 'WHERE ' + w.join(' AND ') : ''} ORDER BY c.created_at DESC LIMIT 500`).bind(...a).all()).results;
+  const total = await db.prepare(`SELECT COUNT(*) AS n FROM customers`).first();
+  return json({ items: rows, total: total ? total.n : 0 });
+}
+
+async function getCustomer(db, id) {
+  const c = await db.prepare(`SELECT * FROM customers WHERE id = ?`).bind(id).first();
+  if (!c) return json({ error: 'not_found' }, 404);
+  const [orders, maybe, wish] = await db.batch([
+    db.prepare(`SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 300`).bind(id),
+    // замовлення без кабінету з тим самим телефоном або email — можна прив'язати вручну
+    db.prepare(`SELECT * FROM orders WHERE customer_id IS NULL AND ((phone = ? AND ? != '') OR (LOWER(email) = ? AND ? != '')) ORDER BY created_at DESC LIMIT 100`)
+      .bind(c.phone || '', c.phone || '', c.email || '', c.email || ''),
+    db.prepare(`SELECT p.slug, p.title, w.created_at FROM wishlist w JOIN products p ON p.id = w.product_id WHERE w.customer_id = ? ORDER BY w.created_at DESC`).bind(id),
+  ]);
+  return json({
+    customer: { ...publicCustomer(c), admin_note: c.admin_note || '', last_login: c.last_login, updated_at: c.updated_at },
+    orders: orders.results.map(customerOrder), unlinked: maybe.results.map(customerOrder), wishlist: wish.results,
+  });
+}
+
+async function updateCustomer(db, id, b) {
+  const c = await db.prepare(`SELECT * FROM customers WHERE id = ?`).bind(id).first();
+  if (!c) return json({ error: 'not_found' }, 404);
+  const phone = b.phone !== undefined ? (b.phone ? normPhone(b.phone) : '') : c.phone || '';
+  const email = b.email !== undefined ? (b.email ? normEmail(b.email) : '') : c.email || '';
+  if (b.phone && !phone) return bad('Невірний телефон: потрібно +380 і 9 цифр');
+  if (b.email && !email) return bad('Невірний email');
+  if (!phone && !email) return bad('Потрібен телефон або email для входу');
+  const dupe = await db.prepare(`SELECT id FROM customers WHERE id != ? AND ((phone = ? AND ? != '') OR (email = ? AND ? != ''))`).bind(id, phone, phone, email, email).first();
+  if (dupe) return bad('Цей телефон або email уже має інший клієнт');
+  let hash = c.pass_hash;
+  if (b.password) {
+    if (String(b.password).length < 6) return bad('Пароль має бути щонайменше 6 символів');
+    hash = await hashPassword(String(b.password));
+  }
+  await db.prepare(`UPDATE customers SET first_name=?, last_name=?, middle_name=?, phone=?, email=?, admin_note=?, pass_hash=?, updated_at=? WHERE id=?`)
+    .bind(b.first_name !== undefined ? str(b.first_name, 60) : c.first_name, b.last_name !== undefined ? str(b.last_name, 60) : c.last_name,
+      b.middle_name !== undefined ? str(b.middle_name, 60) : c.middle_name, phone || null, email || null,
+      b.admin_note !== undefined ? str(b.admin_note, 5000) : c.admin_note, hash, now(), id).run();
+  return getCustomer(db, id);
+}
+
+async function linkCustomerOrder(db, id, b) {
+  const oid = str(b.order, 40);
+  if (b.unlink) await db.prepare(`UPDATE orders SET customer_id = NULL WHERE id = ? AND customer_id = ?`).bind(oid, id).run();
+  else await db.prepare(`UPDATE orders SET customer_id = ? WHERE id = ?`).bind(id, oid).run();
+  return getCustomer(db, id);
 }

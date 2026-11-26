@@ -170,6 +170,7 @@ def build():
     for d in ('assets', 'img', 'tovar', 'kategoriya'): os.makedirs(os.path.join(OUT, d))
     shutil.copy(os.path.join(ROOT, 'web/style.css'), os.path.join(OUT, 'assets/style.css'))
     shutil.copy(os.path.join(ROOT, 'web/app.js'), os.path.join(OUT, 'assets/app.js'))
+    shutil.copy(os.path.join(ROOT, 'web/account.js'), os.path.join(OUT, 'assets/account.js'))
     shutil.copy(os.path.join(ROOT, 'web/favicon.svg'), os.path.join(OUT, 'assets/favicon.svg'))
     shutil.copytree(os.path.join(ROOT, 'web/admin'), os.path.join(OUT, 'admin'))
     for f in os.listdir(os.path.join(ROOT, 'web/ph')):

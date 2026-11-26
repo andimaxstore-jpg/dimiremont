@@ -58,7 +58,7 @@
     [/^\/products$/, products], [/^\/products\/(new|\d+)$/, productEdit],
     [/^\/categories$/, categories], [/^\/categories\/(new|\d+)$/, categoryEdit],
     [/^\/attributes$/, attributes], [/^\/pages$/, pages], [/^\/pages\/home$/, homeEdit], [/^\/pages\/(new|\d+)$/, pageEdit],
-    [/^\/settings$/, settings], [/^\/reviews$/, reviews],
+    [/^\/settings$/, settings], [/^\/reviews$/, reviews], [/^\/customers$/, customers], [/^\/customers\/(\d+)$/, customerView],
   ];
   let lastHash = location.hash;
   async function route() {
@@ -261,6 +261,60 @@
     }));
   }
 
+  // Клієнти (особисті кабінети)
+  async function customers(_, q) {
+    const search = q.get('q') || '';
+    const d = await api('GET', 'customers?q=' + encodeURIComponent(search));
+    view.innerHTML = `<div class="head"><h1>Клієнти</h1><span class="muted">Усього кабінетів: ${d.total}</span></div>
+    <p class="hint">Покупці, які створили особистий кабінет на сайті. Паролі зберігаються зашифрованими, їх не бачить ніхто, але ви можете задати клієнту новий пароль.</p>
+    <form class="toolbar" id="cf"><input type="search" name="q" value="${esc(search)}" placeholder="Ім’я, телефон або email"><button class="btn ghost">Знайти</button></form>
+    ${d.items.length ? `<div class="tbl-wrap"><table class="tbl"><tr><th>Клієнт</th><th>Телефон</th><th>Email</th><th>Зареєстровано</th><th class="num">Замовлень</th><th class="num">Сума покупок</th><th class="num">Збережено</th></tr>
+    ${d.items.map((c) => `<tr class="click" data-href="#/customers/${c.id}"><td>${esc([c.last_name, c.first_name].filter(Boolean).join(' '))}</td><td>${esc(c.phone || '')}</td><td>${esc(c.email || '')}</td>
+      <td>${fmtDate(c.created_at)}</td><td class="num">${c.orders}</td><td class="num">${money(c.spent)}</td><td class="num">${c.saved}</td></tr>`).join('')}</table></div>` : `<div class="card empty">${search ? 'Нікого не знайдено' : 'Поки ніхто не створив кабінет'}</div>`}`;
+    $('#cf').addEventListener('submit', (e) => { e.preventDefault(); go('#/customers?q=' + encodeURIComponent(e.target.q.value.trim())); });
+    clickRows(view);
+  }
+
+  async function customerView(id) {
+    const d = await api('GET', 'customers/' + id);
+    const c = d.customer, dv = c.delivery || {};
+    const tel = (c.phone || '').replace(/[^+\d]/g, '');
+    const ordRows = (list, act) => `<div class="tbl-wrap"><table class="tbl"><tr><th>№</th><th>Дата</th><th class="num">Сума</th><th>Статус</th><th></th></tr>
+      ${list.map((o) => `<tr class="click" data-href="#/orders/${esc(o.id)}"><td>${esc(o.id)}</td><td>${fmtDate(o.created_at)}</td><td class="num">${money(o.total)}</td><td>${pill(o.status)}</td>
+      <td><button type="button" class="btn ghost sm" data-link="${esc(o.id)}" data-act="${act}">${act === 'link' ? 'Прив’язати' : 'Відв’язати'}</button></td></tr>`).join('')}</table></div>`;
+    const delivTxt = !dv.method ? 'Ще не вказано' : dv.method === 'pickup' ? 'Самовивіз'
+      : [DELIV[dv.method], dv.city && (dv.city.label || dv.city.name), dv.branch && dv.branch.title, dv.address].filter(Boolean).join(', ');
+    view.innerHTML = `<div class="head"><a href="#/customers" class="btn ghost sm">← Клієнти</a><h1>${esc([c.last_name, c.first_name, c.middle_name].filter(Boolean).join(' ') || 'Клієнт')}</h1></div>
+    <div class="cols"><div>
+      <div class="card"><h2>Замовлення клієнта <span class="muted">${d.orders.length}</span></h2>${d.orders.length ? ordRows(d.orders, 'unlink') : '<p class="muted">Замовлень у кабінеті ще немає.</p>'}</div>
+      ${d.unlinked.length ? `<div class="card"><h2>Схожі замовлення без кабінету</h2><p class="hint">Оформлені з тим самим телефоном або email, але без входу в кабінет. Прив’яжіть, якщо це той самий клієнт, і він побачить їх у себе.</p>${ordRows(d.unlinked, 'link')}</div>` : ''}
+      <div class="card"><h2>Збережені товари <span class="muted">${d.wishlist.length}</span></h2>${d.wishlist.length ? `<ul>${d.wishlist.map((w) => `<li><a href="/tovar/${esc(w.slug)}.html" target="_blank">${esc(w.title)}</a> <span class="muted">· ${fmtDate(w.created_at)}</span></li>`).join('')}</ul>` : '<p class="muted">Нічого не збережено.</p>'}</div>
+    </div><div>
+      <form class="card" id="cust"><h2>Особисті дані</h2><div class="rows">
+        ${field('Ім’я', 'first_name', c.first_name)}${field('Прізвище', 'last_name', c.last_name)}${field('По батькові', 'middle_name', c.middle_name)}
+        ${field('Телефон', 'phone', c.phone, { ph: '+380…' })}${field('Email', 'email', c.email)}
+        ${field('Нотатка менеджера', 'admin_note', c.admin_note, { type: 'textarea', rows: 3, hint: 'Бачите лише ви' })}
+        ${field('Новий пароль', 'password', '', { hint: 'Заповніть, лише якщо клієнт забув пароль. Повідомте його клієнту.' })}
+      </div>
+      <dl class="dl" style="margin-top:12px"><dt>Доставка</dt><dd>${esc(delivTxt)}</dd><dt>Зареєстровано</dt><dd>${fmtDate(c.created_at)}</dd><dt>Останній вхід</dt><dd>${c.last_login ? fmtDate(c.last_login) : '—'}</dd></dl>
+      <div class="toolbar" style="margin-top:12px"><button class="btn">Зберегти</button>${tel ? `<a class="btn ghost sm" href="tel:${esc(tel)}">Подзвонити</a>` : ''}<span class="grow"></span><button type="button" class="btn danger sm" data-del>Видалити кабінет</button></div></form>
+    </div></div>`;
+    const form = $('#cust'); watchDirty(form);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = formData(form); if (!f.password) delete f.password;
+      try { await api('PATCH', 'customers/' + id, f); dirty = false; toast(f.password ? 'Збережено, пароль змінено' : 'Збережено'); customerView(id); } catch (ex) { fail(ex); }
+    });
+    $$('[data-link]').forEach((b) => b.addEventListener('click', async () => {
+      try { await api('POST', 'customers/' + id + '/link', { order: b.dataset.link, unlink: b.dataset.act === 'unlink' }); toast('Готово'); customerView(id); } catch (ex) { fail(ex); }
+    }));
+    $('[data-del]', form).addEventListener('click', async () => {
+      if (!confirm('Видалити кабінет клієнта? Його замовлення залишаться в розділі «Замовлення».')) return;
+      try { await api('DELETE', 'customers/' + id); dirty = false; toast('Кабінет видалено'); go('#/customers'); } catch (ex) { fail(ex); }
+    });
+    clickRows(view);
+  }
+
   // Замовлення
   async function orders(_, q) {
     const status = q.get('status') || '', search = q.get('q') || '', from = q.get('from') || '', to = q.get('to') || '', page = +q.get('page') || 1;
@@ -275,7 +329,7 @@
     <label class="check">з <input type="date" name="from" value="${esc(from)}"></label><label class="check">по <input type="date" name="to" value="${esc(to)}"></label>
     <button class="btn ghost">Знайти</button></form>
     ${d.items.length ? `<div class="tbl-wrap"><table class="tbl"><tr><th>№</th><th>Дата</th><th>Клієнт</th><th>Телефон</th><th>Доставка</th><th class="num">Товарів</th><th class="num">Сума</th><th>Статус</th></tr>
-    ${d.items.map((o) => `<tr class="click" data-href="#/orders/${esc(o.id)}"><td>${esc(o.id)}</td><td>${fmtDate(o.created_at)}</td><td>${esc(o.name)}</td><td>${esc(o.phone)}</td>
+    ${d.items.map((o) => `<tr class="click" data-href="#/orders/${esc(o.id)}"><td>${esc(o.id)}</td><td>${fmtDate(o.created_at)}</td><td>${esc(o.name)}${o.customer_id ? ' <span title="Має особистий кабінет">👤</span>' : ''}</td><td>${esc(o.phone)}</td>
       <td>${esc(DELIV[o.delivery.method] || '')}${o.delivery.city ? ', ' + esc(o.delivery.city.split(',')[0]) : ''}${o.ttn ? `<br><small class="muted">ТТН ${esc(o.ttn)}</small>` : ''}</td>
       <td class="num">${o.count}</td><td class="num">${money(o.total)}</td><td>${pill(o.status)}</td></tr>`).join('')}</table></div>` : '<div class="card empty">Замовлень не знайдено</div>'}
     ${pages > 1 ? `<div class="toolbar" style="margin-top:12px">${Array.from({ length: pages }, (_, i) => `<button type="button" class="btn ${i + 1 === d.page ? '' : 'ghost'} sm" data-page="${i + 1}">${i + 1}</button>`).join('')}</div>` : ''}`;
@@ -308,6 +362,7 @@
       <dl class="dl" style="margin-top:12px"><dt>Оплата</dt><dd>${esc(PAY[o.payment] || o.payment)}</dd>
       <dt>Дзвінок</dt><dd>${o.call_me ? 'Подзвонити для підтвердження' : 'Просить не дзвонити, якщо все в наявності'}</dd>
       ${o.comment ? `<dt>Коментар</dt><dd>${esc(o.comment)}</dd>` : ''}
+      <dt>Кабінет</dt><dd>${o.customer_id ? `<a href="#/customers/${o.customer_id}">Відкрити профіль клієнта</a>` : 'Оформлено без кабінету'}</dd>
       <dt>Telegram</dt><dd>${o.telegram_ok ? 'Сповіщення надіслано' : 'Сповіщення не надіслано'}</dd><dt>Створено</dt><dd>${fmtDate(o.created_at)}</dd></dl></div>
     </div><div>
       <div class="card"><h2>Обробка</h2><div class="rows">

@@ -12,6 +12,9 @@ const stripTags = (s) => String(s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g
 const href = (u) => { u = String(u || '').trim(); return /^(\/|https?:|tel:|mailto:|viber:|#)/i.test(u) ? u : '/' + u.replace(/^\.?\/*/, ''); };
 const img = (u) => (u ? href(u) : '');
 
+export const HEART = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-9.3-9.2C1.5 8 3.6 4.5 7.1 4.5c2 0 3.5 1.1 4.9 2.9 1.4-1.8 2.9-2.9 4.9-2.9 3.5 0 5.6 3.5 4.4 6.8-1.8 4.6-9.3 9.2-9.3 9.2z"/></svg>';
+const USER_ICO = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20.5c.8-4 4-6 8-6s7.2 2 8 6"/></svg>';
+
 const FONTS = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">';
 
 export function layout(S, { path, title, desc, body, ld = [], ogImage = '', robots = 'index,follow' }) {
@@ -57,6 +60,8 @@ ${ld.map((j) => `<script type="application/ld+json">${jsonLd(j)}</script>`).join
 ${nav}
 <form class="search" action="/katalog.html" role="search"><label for="q" class="sr">Пошук товарів</label><input id="q" name="q" type="search" placeholder="Пошук: цегла, килимок, стелаж…"></form>
 ${tel ? `<a class="phone" href="tel:${E(tel)}">${phone}</a>` : ''}
+<a class="ico-link wish-link" href="/kabinet.html#saved" title="Збережені товари" aria-label="Збережені товари">${HEART}<span class="ico-count" data-wish-count hidden>0</span></a>
+<a class="ico-link acc-link" href="/kabinet.html" title="Особистий кабінет" aria-label="Особистий кабінет">${USER_ICO}<span class="acc-name" data-acc-name>Увійти</span></a>
 <a class="cart-link" href="/koshyk.html">Кошик <span class="cart-count" data-cart-count>0</span></a>
 </div>
 </header>
@@ -117,8 +122,9 @@ export function card(p) {
       (n > 5 ? `<span>+${n - 5}</span>` : '') + '</div>';
   } else if (n > 1) sw = `<div class="mini-sw"><span class="nv">${n} варіантів</span></div>`;
   const search = (p.title.toLowerCase() + ' ' + p.variants.slice(0, 80).map((v) => v.sku).join(' '));
-  return `<article class="card" data-cat="${E(p.cat ? p.cat.slug : '')}" data-price="${p.min}" data-sort="${p.sort}" data-title="${E(search)}" data-f="${E(JSON.stringify(facets(p)))}">
+  return `<article class="card" data-slug="${E(p.slug)}" data-cat="${E(p.cat ? p.cat.slug : '')}" data-price="${p.min}" data-sort="${p.sort}" data-title="${E(search)}" data-f="${E(JSON.stringify(facets(p)))}">
 <a href="${u}" class="card-img">${pic}<span class="badges">${badges}</span></a>
+<button type="button" class="wish" data-wish="${E(p.slug)}" aria-pressed="false" aria-label="Зберегти товар" title="Зберегти">${HEART}</button>
 <div class="card-body"><h3><a href="${u}">${E(p.title)}</a></h3>
 ${sw}<div class="card-foot"><span class="price">${old}${price}</span><a class="btn-sm" href="${u}">Обрати</a></div></div></article>`;
 }
@@ -295,7 +301,8 @@ ${gift}
 <div class="buy"><div class="price-big"><s class="old" data-old${oldTxt ? '' : ' hidden'}>${oldTxt}</s> <span data-price>${money(v0.price)} ₴</span></div>${note}<p class="stock" data-stock></p>${freeFrom ? `<p class="ship-note">Доставка за тарифами перевізника, <b>безкоштовно від ${money(freeFrom)} ₴</b></p>` : ''}</div>
 <form class="variant-form" onsubmit="return false">${selectors}
 <div class="buy-row"><div class="qty"><button type="button" data-qty="-1" aria-label="Менше">−</button><input id="qty" type="number" min="1" value="1" inputmode="numeric" aria-label="Кількість"><button type="button" data-qty="1" aria-label="Більше">+</button></div>
-<button type="button" class="btn" data-add>Додати в кошик</button></div>
+<button type="button" class="btn" data-add>Додати в кошик</button>
+<button type="button" class="wish wish-big" data-wish="${E(p.slug)}" aria-pressed="false" aria-label="Зберегти товар" title="Зберегти">${HEART}<span data-wish-label>Зберегти</span></button></div>
 <p class="added" data-added hidden>Додано в кошик. <a href="/koshyk.html">Оформити замовлення</a></p>
 </form>
 ${noPhoto}
@@ -432,5 +439,18 @@ export function sitemap(S) {
 
 export function robots(S) {
   const site = String(S.settings.site_url || '').replace(/\/$/, '');
-  return `User-agent: *\nAllow: /\nDisallow: /koshyk.html\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: ${site}/sitemap.xml\n`;
+  return `User-agent: *\nAllow: /\nDisallow: /koshyk.html\nDisallow: /kabinet.html\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: ${site}/sitemap.xml\n`;
+}
+
+/** Особистий кабінет: оболонка сторінки, вміст малює /assets/account.js. */
+export function accountPage(S) {
+  const st = S.settings;
+  const tel = String(st.phone || '').replace(/[^+0-9]/g, '');
+  const body = `<section class="wrap block acc" data-account data-phone="${E(st.phone || '')}" data-tel="${E(tel)}">
+<h1>Особистий кабінет</h1>
+<noscript><p>Для кабінету потрібно увімкнути JavaScript у браузері.</p></noscript>
+<div data-acc-root><p class="muted">Завантаження…</p></div>
+</section>
+<script src="/assets/account.js" defer></script>`;
+  return layout(S, { path: 'kabinet.html', title: `Особистий кабінет | ${st.shop_name}`, desc: 'Особистий кабінет покупця: замовлення, особисті дані, збережені товари.', body, robots: 'noindex,nofollow' });
 }

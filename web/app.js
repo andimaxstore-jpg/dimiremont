@@ -173,7 +173,8 @@
     var phone = document.getElementById('o-phone');
     function normPhone(v) {
       var d = v.replace(/\D/g, '');
-      if (d.indexOf('380') === 0) d = d.slice(3); else if (d.indexOf('80') === 0) d = d.slice(2);
+      while (d.length > 9 && d.indexOf('380') === 0) d = d.slice(3); // +380 вже є в полі, а людина вводить номер ще раз з +380
+      if (d.length > 9 && d.indexOf('80') === 0) d = d.slice(2);
       if (d.indexOf('0') === 0) d = d.slice(1);
       return d.slice(0, 9);
     }
@@ -321,7 +322,12 @@
         payment: f.get('payment'),
         comment: (f.get('comment') || '').trim(),
         callMe: !f.get('nocall'),
-        items: load().map(function (i) { return { sku: i.sku, title: i.title, opt: i.opt, qty: i.qty, price: i.price }; })
+        items: load().map(function (i) { return { sku: i.sku, title: i.title, opt: i.opt, qty: i.qty, price: i.price }; }),
+        // Для автозаповнення наступного замовлення з кабінету
+        ref: {
+          cityId: city ? city.id : '', cityName: city ? city.title : cityName, cityLabel: city ? (city.label || city.title) : cityName,
+          branchId: branch ? branch.id : '', branchTitle: branch ? branch.title : brName, branchSub: branch ? (branch.sub || '') : ''
+        }
       };
       submitBtn.disabled = true; submitBtn.textContent = 'Надсилаємо…';
       fetch(API + 'order', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(o) })
@@ -331,6 +337,14 @@
           document.querySelector('[data-order-id]').textContent = res.d.id;
           document.querySelector('[data-order-phone]').textContent = o.customer.phone;
           save([]); checkout.hidden = true; document.querySelector('[data-done]').hidden = false; scrollTo(0, 0);
+          var accCta = document.querySelector('[data-done-acc]');
+          if (loggedIn) { if (accCta) accCta.innerHTML = 'Статус замовлення можна переглядати в <a href="/kabinet.html#orders">особистому кабінеті</a>.'; }
+          else {
+            // запам'ятовуємо номер, щоб після реєстрації це замовлення само з'явилося в кабінеті
+            try { var mo = JSON.parse(localStorage.getItem('dr-my-orders')) || []; mo.unshift({ id: res.d.id, phone: o.customer.phone }); localStorage.setItem('dr-my-orders', JSON.stringify(mo.slice(0, 20))); } catch (e) {}
+            if (accCta) accCta.innerHTML = '<a href="/kabinet.html#register">Створіть особистий кабінет</a>, щоб стежити за статусом замовлення. Це замовлення з’явиться там автоматично.';
+          }
+          if (accCta) accCta.hidden = false;
         })
         .catch(function (ex) {
           var t = orderText(o);
@@ -351,6 +365,44 @@
     });
     setMethod('np');
     drawCart();
+
+    // --- кабінет: підставляємо дані покупця та останню доставку
+    var accNote = document.querySelector('[data-acc-note]');
+    var loggedIn = false;
+    function prefill(cu) {
+      function put(id, v) { var el = document.getElementById(id); if (el && !el.value && v) el.value = v; }
+      put('o-last', cu.last_name); put('o-first', cu.first_name); put('o-email', cu.email);
+      if (cu.phone && normPhone(phone.value).length < 9) { phone.value = cu.phone; phone.dispatchEvent(new Event('input')); }
+      var d = cu.delivery;
+      if (!d || !d.method) return;
+      var r = form.querySelector('input[name="method"][value="' + d.method + '"]');
+      if (!r) return;
+      r.checked = true; setMethod(d.method);
+      if (d.city && d.city.name) {
+        cityAc.input.value = d.city.name;
+        if (d.city.id) { city = { title: d.city.name, value: d.city.name, id: d.city.id, label: d.city.label }; brAc.input.disabled = false; brAc.input.placeholder = 'Оберіть або введіть номер'; }
+        else setManual(true);
+      }
+      if (d.branch && d.branch.title) {
+        brAc.input.value = d.branch.title;
+        if (d.branch.id && city) branch = { title: d.branch.title, sub: d.branch.sub, id: d.branch.id, value: d.branch.title };
+        else setManual(true);
+      }
+      if (d.address) put('o-addr', d.address);
+    }
+    var hasAcc = false; try { hasAcc = !!localStorage.getItem('dr-acc'); } catch (e) {}
+    if (hasAcc) {
+      fetch('/api/account/me', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+        if (!d || !d.customer) { if (window.DR) window.DR.setAccount(null); throw 0; }
+        loggedIn = true; prefill(d.customer);
+        if (accNote) { accNote.innerHTML = 'Дані підставлено з вашого <a href="/kabinet.html#profile">кабінету</a>. Замовлення збережеться в історії.'; accNote.hidden = false; }
+      }).catch(function () { guestNote(); });
+    } else guestNote();
+    function guestNote() {
+      if (!accNote) return;
+      accNote.innerHTML = 'Маєте кабінет? <a href="/kabinet.html?next=koshyk">Увійдіть</a>, і дані підставляться самі, а замовлення збережеться в історії.';
+      accNote.hidden = false;
+    }
   }
 })();
 
@@ -383,4 +435,52 @@
   if (!mm) return;
   document.addEventListener('click', function (e) { if (mm.open && !mm.contains(e.target)) mm.open = false; });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && mm.open) { mm.open = false; mm.querySelector('summary').focus(); } });
+})();
+
+// Збережені товари (сердечко) і кабінет у шапці. Гість — список у браузері; після входу — ще й у кабінеті на сервері.
+(function () {
+  var WK = 'shop-wish-v1', AK = 'dr-acc';
+  function wl() { try { return JSON.parse(localStorage.getItem(WK)) || []; } catch (e) { return []; } }
+  function acc() { try { return JSON.parse(localStorage.getItem(AK)); } catch (e) { return null; } }
+  function paint() {
+    var a = wl(), me = acc();
+    document.querySelectorAll('[data-wish-count]').forEach(function (el) { el.textContent = a.length; el.hidden = !a.length; });
+    document.querySelectorAll('[data-wish]').forEach(function (b) {
+      var on = a.indexOf(b.getAttribute('data-wish')) >= 0;
+      b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.title = on ? 'Прибрати зі збережених' : 'Зберегти';
+      var l = b.querySelector('[data-wish-label]'); if (l) l.textContent = on ? 'Збережено' : 'Зберегти';
+    });
+    document.querySelectorAll('[data-acc-name]').forEach(function (el) { el.textContent = me && me.name ? me.name : 'Увійти'; });
+  }
+  function setWl(a) { try { localStorage.setItem(WK, JSON.stringify(a.slice(0, 200))); } catch (e) {} paint(); }
+  function setAcc(c) {
+    try { if (c) localStorage.setItem(AK, JSON.stringify({ name: c.first_name || 'Кабінет' })); else localStorage.removeItem(AK); } catch (e) {}
+    paint();
+  }
+  function send(add, remove) {
+    if (!acc()) return Promise.resolve(null);
+    return fetch('/api/account/wishlist', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-req': '1' }, body: JSON.stringify({ add: add, remove: remove }) })
+      .then(function (r) { if (r.status === 401) { setAcc(null); return null; } return r.ok ? r.json() : null; })
+      .catch(function () { return null; });
+  }
+  function toggle(slug) {
+    var a = wl(), i = a.indexOf(slug);
+    if (i >= 0) { a.splice(i, 1); send([], [slug]); } else { a.unshift(slug); send([slug], []); }
+    setWl(a);
+    document.dispatchEvent(new CustomEvent('dr:wish', { detail: { slug: slug, on: i < 0 } }));
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-wish]');
+    if (!b) return;
+    e.preventDefault(); toggle(b.getAttribute('data-wish'));
+  });
+  window.addEventListener('storage', function (e) { if (e.key === WK || e.key === AK) paint(); });
+  window.DR = { wishList: wl, setWish: setWl, sendWish: send, account: acc, setAccount: setAcc, paint: paint };
+  paint();
+  // Раз за візит підтягуємо збережене в кабінеті (наприклад, з іншого пристрою)
+  var synced = false; try { synced = !!sessionStorage.getItem('dr-wsync'); sessionStorage.setItem('dr-wsync', '1'); } catch (e) {}
+  if (acc() && !synced && !document.querySelector('[data-account]')) {
+    send(wl(), []).then(function (d) { if (d && d.items) setWl(d.items.map(function (i) { return i.slug; })); });
+  }
 })();

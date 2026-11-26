@@ -18,6 +18,7 @@ import { ensureDb, loadStore } from './db.js';
 import { adminApi } from './admin-api.js';
 import * as R from './render.js';
 import cartTpl from './cart.html';
+import { accountApi, currentCustomer, rememberFromOrder, productsBySlugs } from './account.js';
 
 const NP_URL = 'https://api.novaposhta.ua/v2.0/json/';
 const UP_URL = 'https://www.ukrposhta.ua/address-classifier-ws';
@@ -52,6 +53,8 @@ export default {
 async function api(request, env, ctx, url) {
   if (url.pathname === '/api/order' && request.method === 'POST') return await order(request, env);
   if (url.pathname === '/api/review' && request.method === 'POST') return await review(request, env);
+  if (url.pathname.startsWith('/api/account/')) return await accountApi(request, env, url);
+  if (url.pathname === '/api/products' && env.DB) return await productsBySlugs(env, url);
   if (url.pathname === '/api/np/cities') return await cached(request, ctx, () => npCities(url, env));
   if (url.pathname === '/api/np/warehouses') return await cached(request, ctx, () => npWarehouses(url, env));
   if (url.pathname === '/api/up/cities') return await cached(request, ctx, () => upCities(url, env));
@@ -75,6 +78,7 @@ async function storefront(request, env, url) {
   const clean = p.replace(/\/$/, '').replace(/\.html$/, '');
   if (clean === '/katalog') return page(R.catalogPage(S));
   if (clean === '/koshyk') return page(R.cartPage(S, cartTpl));
+  if (clean === '/kabinet') return new Response(request.method === 'HEAD' ? null : R.accountPage(S), { headers: { ...HTML, 'cache-control': 'no-store' } });
   let m = /^\/tovar\/([a-z0-9-]+)$/.exec(clean);
   if (m) {
     const pr = S.bySlug.get(m[1]);
@@ -265,14 +269,17 @@ async function order(request, env) {
   const freeShip = d.method !== 'pickup' && freeFrom > 0 && total >= freeFrom;
 
   let saved = false;
+  // Покупець увійшов у кабінет — замовлення з'явиться в його вкладці «Замовлення».
+  const cust = env.DB ? await currentCustomer(request, env).catch(() => null) : null;
   if (env.DB) {
     try {
       const at = new Date().toISOString();
-      await env.DB.prepare(`INSERT INTO orders (id, created_at, status, name, phone, email, delivery, payment, comment, call_me, items, total, updated_at)
-        VALUES (?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(id, at, name, phone, cut(c.email, 200), JSON.stringify(delivery), cut(o.payment, 40), comment, o.callMe === false ? 0 : 1, JSON.stringify(items), total, at).run();
+      await env.DB.prepare(`INSERT INTO orders (id, created_at, status, name, phone, email, delivery, payment, comment, call_me, items, total, updated_at, customer_id)
+        VALUES (?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(id, at, name, '+380' + phone.slice(-9), cut(c.email, 200), JSON.stringify(delivery), cut(o.payment, 40), comment, o.callMe === false ? 0 : 1, JSON.stringify(items), total, at, cust ? cust.id : null).run();
       saved = true;
     } catch (e) { console.log('order_save_failed', String(e)); }
+    if (saved && cust) await rememberFromOrder(env, cust, o);
   }
 
   const tg = await notifyTelegram(env, { id, name, phone, email: c.email, delivery, payment: o.payment, comment, callMe: o.callMe, items, total, freeShip });
