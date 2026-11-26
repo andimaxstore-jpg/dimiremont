@@ -3,6 +3,7 @@
 <div class="checkout" data-checkout hidden>
 <form class="co-form" id="order-form" data-order novalidate>
 <input type="text" name="website" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
+<p class="acc-note" data-acc-note hidden></p>
 <fieldset class="co-step"><legend><span class="n">1</span>Контактні дані</legend>
 <div class="fields">
 <label for="o-last">Прізвище<input id="o-last" name="lastName" required autocomplete="family-name"></label>
@@ -50,6 +51,7 @@
 
 <div class="done" data-done hidden><h2>Дякуємо! Замовлення №<span data-order-id></span> прийнято</h2>
 <p>Менеджер зв’яжеться з вами найближчим часом за номером <b data-order-phone></b>, щоб підтвердити наявність і доставку.</p>
+<p class="acc-note" data-done-acc hidden></p>
 <a class="btn" href="/katalog.html">Повернутися до каталогу</a></div>
 
 <div class="done" data-fallback hidden><h2>Не вдалося надіслати замовлення автоматично</h2><p>Будь ласка, надішліть цей текст нам у месенджер або зателефонуйте {{PHONE}}.</p>

@@ -295,3 +295,72 @@ pre{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);
 .hp{position:absolute;left:-9999px;width:1px;height:1px}
 .rev-ok{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;font-weight:600}
 @media (max-width:760px){.rev-in{grid-template-columns:1fr}}
+/* шапка: збережені та кабінет */
+.ico-link{position:relative;display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-weight:600;color:var(--ink);padding:6px;border-radius:999px}
+.ico-link svg{fill:none;stroke:currentColor;stroke-width:1.8}
+.ico-link:hover{background:var(--bg)}
+.ico-count{position:absolute;top:-2px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--sale);color:#fff;font-size:.7rem;line-height:18px;text-align:center}
+.acc-name{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:640px){.acc-name{display:none}.ico-link{padding:6px 2px}.top-in .ico-link+.ico-link{margin-left:-4px}}
+@media (max-width:400px){.top-in{gap:8px}.logo{font-size:1.02rem}.cart-link{padding:8px 10px}}
+/* сердечко на картці та на сторінці товару */
+.card{position:relative}
+.wish{cursor:pointer;border:0;background:none;color:var(--muted);padding:0;display:inline-flex;align-items:center;justify-content:center;gap:6px;font:600 .9rem var(--body)}
+.wish svg{fill:none;stroke:currentColor;stroke-width:1.8;transition:transform .15s}
+.wish:hover{color:var(--sale)}
+.wish.on{color:var(--sale)}
+.wish.on svg{fill:currentColor}
+.wish:active svg{transform:scale(.85)}
+.card>.wish{position:absolute;top:8px;right:8px;width:36px;height:36px;border-radius:50%;background:color-mix(in srgb,var(--surface) 88%,transparent);box-shadow:0 1px 4px color-mix(in srgb,var(--fg) 15%,transparent);z-index:2}
+.wish-big{height:46px;padding:0 16px;border-radius:999px;box-shadow:inset 0 0 0 1.5px var(--line);color:var(--fg)}
+.wish-big.on{color:var(--sale);box-shadow:inset 0 0 0 1.5px currentColor}
+.buy-row{flex-wrap:wrap}
+/* кабінет */
+.acc{max-width:980px}
+.acc h1{margin-bottom:16px}
+.acc-h2{margin:28px 0 6px}
+.acc-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:14px;margin-bottom:16px;min-width:0}
+.acc-card h2{font-size:1.05rem}
+.acc-card .note,.acc .note{color:var(--muted);font-size:.88rem;margin:0}
+.acc-card>label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
+.acc-card input:not([type=radio]):not([type=checkbox]){width:100%}
+.link-ord{gap:0}
+.acc-auth{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:0 24px;align-items:start}
+.acc-auth .acc-tabs{grid-column:1}
+.acc-auth form{grid-column:1}
+.acc-why{grid-column:2;grid-row:1/span 3;padding:18px;border-radius:var(--r);background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+.acc-why h2{font-size:1rem;margin-bottom:8px}
+.acc-why ul{margin:0;padding-left:18px;display:grid;gap:6px}
+@media (max-width:760px){.acc-auth{grid-template-columns:1fr}.acc-why{grid-column:1;grid-row:auto}}
+.acc-tabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;scrollbar-width:none}
+.acc-tabs a,.acc-tabs button{font:600 .92rem var(--body);padding:9px 16px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface);color:var(--fg);text-decoration:none;cursor:pointer;white-space:nowrap}
+.acc-tabs .on{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.acc-tabs .on .muted{color:inherit;opacity:.75}
+.acc-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:-6px 0 12px}
+.acc-head p{margin:0}
+.link-btn{border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer;font:inherit;padding:4px}
+.acc-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ok-msg{color:var(--ok);font-weight:600}
+.acc-note{margin:0;padding:10px 14px;border-radius:8px;background:color-mix(in srgb,var(--accent) 10%,var(--surface));font-size:.92rem}
+.ord{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:12px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.ord-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.st{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.8rem;font-weight:700;background:var(--bg);color:var(--fg)}
+.st-new{background:color-mix(in srgb,#2d5fb8 14%,var(--surface));color:#2d5fb8}
+.st-confirmed,.st-paid{background:color-mix(in srgb,var(--accent) 22%,var(--surface));color:var(--fg)}
+.st-shipped{background:color-mix(in srgb,#7a4fc4 15%,var(--surface));color:#7a4fc4}
+.st-done{background:color-mix(in srgb,var(--ok) 15%,var(--surface));color:var(--ok)}
+.st-cancelled{background:color-mix(in srgb,var(--sale) 12%,var(--surface));color:var(--sale)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .st-new{color:#7ea6ef}:root:not([data-theme="light"]) .st-shipped{color:#b597ef}}
+:root[data-theme="dark"] .st-new{color:#7ea6ef}:root[data-theme="dark"] .st-shipped{color:#b597ef}
+.ord-steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;font-size:.78rem;color:var(--muted)}
+.ord-steps li{border-top:4px solid var(--line);padding-top:6px}
+.ord-steps li.on{border-color:var(--ok);color:var(--fg);font-weight:600}
+.ord-cancel{margin:0;color:var(--sale);font-weight:600}
+.ord-items{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.ord-items li{display:flex;justify-content:space-between;gap:12px;font-size:.92rem}
+.ord-items li span:last-child{white-space:nowrap}
+.ord-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-top:1px solid var(--line);padding-top:10px;font-size:.9rem}
+.ord-total{font-size:1.15rem;white-space:nowrap}
+.link-ord summary{cursor:pointer;font-weight:600}
+.link-ord form{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.ph-box{display:block;width:100%;height:100%;background:var(--bg)}
