@@ -38,6 +38,9 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, mime TEXT, name TEXT, size INTEGER, data BLOB, created_at TEXT)`,
   `CREATE TABLE IF NOT EXISTS redirects (path TEXT PRIMARY KEY, target TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT, ts INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, name TEXT NOT NULL, rating INTEGER NOT NULL,
+     text TEXT DEFAULT '', status TEXT DEFAULT 'pending', ip TEXT DEFAULT '', created_at TEXT NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS reviews_prod ON reviews(product_id, status)`,
 ];
 
 let ready = null;
@@ -67,6 +70,9 @@ async function init(env) {
  * Фото ставиться лише варіантам без фото, тож завантажене в адмінці не перезаписується.
  */
 async function applyPatches(db) {
+  // Таблиця відгуків (додана після запуску) — створюється, якщо її ще немає.
+  await db.batch([db.prepare(`CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, name TEXT NOT NULL, rating INTEGER NOT NULL,
+     text TEXT DEFAULT '', status TEXT DEFAULT 'pending', ip TEXT DEFAULT '', created_at TEXT NOT NULL)`), db.prepare(`CREATE INDEX IF NOT EXISTS reviews_prod ON reviews(product_id, status)`)]);
   await patchPhotos(db);
   await patchRemontFirst(db);
   if (!(await patchDone(db, 'patch_free_ship_v1')))
@@ -159,7 +165,7 @@ export async function loadStore(env) {
   const vr = await db.prepare(`SELECT value FROM settings WHERE key='version'`).first();
   const v = vr ? vr.value : '0';
   if (memo && memo.v === v) { memo.at = now; return memo.data; }
-  const [s, g, c, p, va, at, pa, f, pg, rd] = await db.batch([
+  const [s, g, c, p, va, at, pa, f, pg, rd, rv] = await db.batch([
     db.prepare(`SELECT key, value FROM settings`),
     db.prepare(`SELECT * FROM cat_groups ORDER BY sort, id`),
     db.prepare(`SELECT * FROM categories ORDER BY sort, id`),
@@ -170,10 +176,19 @@ export async function loadStore(env) {
     db.prepare(`SELECT * FROM category_filters ORDER BY category_id, sort, id`),
     db.prepare(`SELECT * FROM pages ORDER BY sort, id`),
     db.prepare(`SELECT * FROM redirects`),
+    db.prepare(`SELECT id, product_id, name, rating, text, created_at FROM reviews WHERE status='approved' ORDER BY created_at DESC`),
   ]);
   const settings = {};
   for (const r of s.results) settings[r.key] = parse(r.value, r.value);
   const data = buildStore(settings, g.results, c.results, p.results, va.results, at.results, pa.results, f.results, pg.results, rd.results);
+  // Схвалені відгуки -> p.reviews, p.rating (середня оцінка), p.reviewCount.
+  const rByP = new Map();
+  for (const r of rv.results) { if (!rByP.has(r.product_id)) rByP.set(r.product_id, []); rByP.get(r.product_id).push(r); }
+  for (const pr of data.products) {
+    const list = rByP.get(pr.id) || [];
+    pr.reviews = list; pr.reviewCount = list.length;
+    pr.rating = list.length ? Math.round((list.reduce((a, r) => a + r.rating, 0) / list.length) * 10) / 10 : 0;
+  }
   memo = { v, at: now, data };
   return data;
 }

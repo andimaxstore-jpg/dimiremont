@@ -268,3 +268,30 @@ pre{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);
 .page-content h2{margin:22px 0 8px}
 .page-content img{border-radius:var(--r)}
 .price-big .old{font-size:.55em;vertical-align:middle}
+
+/* відгуки */
+.stars{position:relative;display:inline-block;color:var(--line);letter-spacing:2px;line-height:1}
+.stars::before{content:"★★★★★";position:absolute;inset:0;width:var(--r);overflow:hidden;color:#e0a526;white-space:nowrap}
+.rate-line{display:inline-flex;align-items:center;gap:8px;margin:-4px 0 8px;font-size:.9rem;color:var(--muted);text-decoration:none}
+.rev-in{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:32px;align-items:start}
+.rev-sum{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:1.1rem}
+.rev{border-top:1px solid var(--line);padding:14px 0}
+.rev-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rev-h time{color:var(--muted);font-size:.85rem}
+.rev p{margin:8px 0 0;white-space:pre-wrap}
+.rev-form{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:12px}
+.rev-form h3{margin:0}
+.rev-form label{display:grid;gap:6px;font-weight:600;font-size:.9rem}
+.rev-form input:not([type=radio]),.rev-form textarea{font:inherit;font-weight:400;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);width:100%;box-sizing:border-box}
+.rev-form .note{margin:0;font-size:.85rem;color:var(--muted)}
+.rev-form .err{margin:0;color:#c0392b;font-weight:600}
+.rate{border:0;padding:0;margin:0}
+.rate-in{display:flex;flex-direction:row-reverse;justify-content:flex-end;gap:4px}
+.rate legend{font-weight:600;font-size:.9rem;margin-bottom:6px;padding:0}
+.rate input{position:absolute;opacity:0;width:1px;height:1px}
+.rate label{font-size:2rem;line-height:1;color:var(--line);cursor:pointer}
+.rate input:checked~label,.rate label:hover,.rate label:hover~label{color:#e0a526}
+.rate input:focus-visible+label{outline:2px solid var(--accent);outline-offset:2px}
+.hp{position:absolute;left:-9999px;width:1px;height:1px}
+.rev-ok{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;font-weight:600}
+@media (max-width:760px){.rev-in{grid-template-columns:1fr}}

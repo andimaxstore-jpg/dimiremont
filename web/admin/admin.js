@@ -58,7 +58,7 @@
     [/^\/products$/, products], [/^\/products\/(new|\d+)$/, productEdit],
     [/^\/categories$/, categories], [/^\/categories\/(new|\d+)$/, categoryEdit],
     [/^\/attributes$/, attributes], [/^\/pages$/, pages], [/^\/pages\/home$/, homeEdit], [/^\/pages\/(new|\d+)$/, pageEdit],
-    [/^\/settings$/, settings],
+    [/^\/settings$/, settings], [/^\/reviews$/, reviews],
   ];
   let lastHash = location.hash;
   async function route() {
@@ -82,7 +82,7 @@
   const go = (h) => { dirty = false; location.hash = h; };
 
   async function refreshBadge() {
-    try { const d = await api('GET', 'dashboard'); const n = d.byStatus.new || 0; const b = $('#new-count'); b.textContent = n; b.hidden = !n; return d; } catch (e) { return null; }
+    try { const d = await api('GET', 'dashboard'); const n = d.byStatus.new || 0; const b = $('#new-count'); b.textContent = n; b.hidden = !n; const rp = (d.counts && d.counts.reviews_pending) || 0, rb = $('#rev-count'); if (rb) { rb.textContent = rp; rb.hidden = !rp; } return d; } catch (e) { return null; }
   }
   async function boot() {
     try { await api('GET', 'me'); } catch (e) { return; }
@@ -232,6 +232,35 @@
   }
 
   // =====================================================================
+  // Відгуки: модерація
+  async function reviews(_, q) {
+    const status = q.get('status') || 'pending';
+    const d = await api('GET', 'reviews?status=' + status);
+    const L = { pending: 'На перевірці', approved: 'Опубліковані', rejected: 'Відхилені', all: 'Усі' };
+    const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
+    view.innerHTML = `<div class="head"><h1>Відгуки</h1></div>
+    <p class="hint">На сайті й у Google показуються лише опубліковані відгуки. Нові відгуки чекають тут на вашу перевірку.</p>
+    <div class="tabs">${Object.keys(L).map((s) => `<button type="button" data-st="${s}" class="${s === status ? 'on' : ''}">${L[s]} <span class="muted">${s === 'all' ? Object.values(d.counts).reduce((a, b) => a + b, 0) : d.counts[s] || 0}</span></button>`).join('')}</div>
+    ${d.items.length ? d.items.map((r) => `<div class="card" style="margin-top:12px" data-id="${r.id}">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><b style="color:#d69e2e;letter-spacing:1px">${stars(r.rating)}</b> <b>${esc(r.name)}</b> <span class="muted">· ${fmtDate(r.created_at)}</span></div>
+      <a href="/tovar/${esc(r.slug || '')}.html" target="_blank" class="muted">${esc(r.title || 'Товар видалено')}</a></div>
+      <p style="white-space:pre-wrap;margin:10px 0">${esc(r.text)}</p>
+      <div class="toolbar">${r.status !== 'approved' ? '<button type="button" class="btn sm" data-act="approved">Опублікувати</button>' : ''}
+      ${r.status !== 'rejected' ? '<button type="button" class="btn ghost sm" data-act="rejected">Відхилити</button>' : ''}
+      <button type="button" class="btn ghost sm" data-act="remove">Видалити</button>${status === 'all' ? ` <span class="muted">${L[r.status] || r.status}</span>` : ''}</div></div>`).join('')
+      : `<div class="card empty">${status === 'pending' ? 'Нових відгуків немає' : 'Тут поки порожньо'}</div>`}`;
+    $$('[data-st]').forEach((b) => b.addEventListener('click', () => go('#/reviews?status=' + b.dataset.st)));
+    $$('[data-act]').forEach((b) => b.addEventListener('click', async () => {
+      const id = b.closest('[data-id]').dataset.id, act = b.dataset.act;
+      try {
+        if (act === 'remove') { if (!confirm('Видалити відгук назавжди?')) return; await api('DELETE', 'reviews/' + id); }
+        else await api('PATCH', 'reviews/' + id, { status: act });
+        toast(act === 'approved' ? 'Опубліковано' : act === 'rejected' ? 'Відхилено' : 'Видалено');
+        reviews(_, q); refreshBadge();
+      } catch (ex) { fail(ex); }
+    }));
+  }
+
   // Замовлення
   async function orders(_, q) {
     const status = q.get('status') || '', search = q.get('q') || '', from = q.get('from') || '', to = q.get('to') || '', page = +q.get('page') || 1;

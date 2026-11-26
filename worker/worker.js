@@ -51,6 +51,7 @@ export default {
 
 async function api(request, env, ctx, url) {
   if (url.pathname === '/api/order' && request.method === 'POST') return await order(request, env);
+  if (url.pathname === '/api/review' && request.method === 'POST') return await review(request, env);
   if (url.pathname === '/api/np/cities') return await cached(request, ctx, () => npCities(url, env));
   if (url.pathname === '/api/np/warehouses') return await cached(request, ctx, () => npWarehouses(url, env));
   if (url.pathname === '/api/up/cities') return await cached(request, ctx, () => upCities(url, env));
@@ -280,6 +281,37 @@ async function order(request, env) {
   return json({ ok: true, id, total });
 }
 
+// ---------- відгуки покупців: зберігаємо на модерацію, повідомляємо в Telegram ----------
+async function review(request, env) {
+  if (!env.DB) return json({ error: 'no_db' }, 503);
+  let b = {};
+  try { b = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
+  if (b.website) return json({ ok: true }); // пастка для ботів
+  const clean = (v, n) => String(v == null ? '' : v).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const name = clean(b.name, 60), text = String(b.text == null ? '' : b.text).replace(/<[^>]*>/g, '').trim().slice(0, 2000);
+  const rating = parseInt(b.rating, 10);
+  const errors = [];
+  if (name.length < 2) errors.push('name');
+  if (!(rating >= 1 && rating <= 5)) errors.push('rating');
+  if (text.length < 5) errors.push('text');
+  const S = await loadStore(env);
+  const p = S.bySlug.get(String(b.product || ''));
+  if (!p) errors.push('product');
+  if (errors.length) return json({ error: 'validation', fields: errors }, 422);
+  const ip = request.headers.get('cf-connecting-ip') || '';
+  const hourAgo = new Date(Date.now() - 3600e3).toISOString();
+  const recent = await env.DB.prepare(`SELECT COUNT(*) AS n FROM reviews WHERE ip=? AND created_at > ?`).bind(ip, hourAgo).first();
+  if (ip && recent && recent.n >= 5) return json({ error: 'too_many' }, 429);
+  const at = new Date().toISOString();
+  await env.DB.prepare(`INSERT INTO reviews (product_id, name, rating, text, status, ip, created_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)`)
+    .bind(p.id, name, rating, text, ip, at).run();
+  const site = new URL(request.url).origin;
+  await sendTelegram(env, `⭐ <b>Новий відгук</b> ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}\n` +
+    `<b>Товар:</b> <a href="${site}/tovar/${esc(p.slug)}.html">${esc(p.title)}</a>\n<b>Від:</b> ${esc(name)}\n\n${esc(text.slice(0, 1500))}\n\n` +
+    `Схвалити чи відхилити: ${site}/admin/#/reviews`).catch(() => {});
+  return json({ ok: true });
+}
+
 async function notifyTelegram(env, o) {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return { sent: 0, errors: ['not_configured'] };
   const d = o.delivery;
@@ -299,6 +331,11 @@ async function notifyTelegram(env, o) {
     (o.comment ? `<b>Коментар:</b> ${esc(o.comment)}\n` : '') +
     (o.callMe === false ? '<i>Клієнт просить не дзвонити для підтвердження</i>\n' : '') +
     `\n<b>Товари:</b>\n${lines.join('\n')}\n\n<b>Разом: ${money(o.total)}</b>`;
+  return sendTelegram(env, text);
+}
+
+async function sendTelegram(env, text) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return { sent: 0, errors: ['telegram_not_configured'] };
   const chats = String(env.TELEGRAM_CHAT_ID).split(',').map((s) => s.trim()).filter(Boolean);
   const token = String(env.TELEGRAM_BOT_TOKEN).trim();
   let sent = 0; const errors = [];

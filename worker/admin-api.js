@@ -81,6 +81,21 @@ export async function adminApi(request, env, url) {
       if (m === 'POST') return uploadMedia(db, request);
       if (m === 'DELETE' && id) { await db.prepare(`DELETE FROM media WHERE id = ?`).bind(id).run(); return json({ ok: true }); }
       break;
+    case 'reviews':
+      if (!id && m === 'GET') {
+        const st = url.searchParams.get('status') || 'pending';
+        const rows = (await db.prepare(`SELECT r.id, r.name, r.rating, r.text, r.status, r.created_at, p.title, p.slug FROM reviews r
+          LEFT JOIN products p ON p.id = r.product_id ${st === 'all' ? '' : 'WHERE r.status = ?'} ORDER BY r.created_at DESC LIMIT 300`)
+          .bind(...(st === 'all' ? [] : [st])).all()).results;
+        const cnt = (await db.prepare(`SELECT status, COUNT(*) AS n FROM reviews GROUP BY status`).all()).results;
+        return json({ items: rows, counts: Object.fromEntries(cnt.map((r) => [r.status, r.n])) });
+      }
+      if (id && m === 'PATCH') {
+        if (!['approved', 'rejected', 'pending'].includes(body.status)) return bad('Невідомий статус');
+        return write(async () => { await db.prepare(`UPDATE reviews SET status = ? WHERE id = ?`).bind(body.status, +id).run(); return json({ ok: true }); });
+      }
+      if (id && m === 'DELETE') return write(async () => { await db.prepare(`DELETE FROM reviews WHERE id = ?`).bind(+id).run(); return json({ ok: true }); });
+      break;
     case 'export': return exportAll(db);
     case 'telegram-test': return telegramTest(env);
   }
@@ -97,7 +112,7 @@ async function dashboard(db) {
     db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS sum FROM orders WHERE created_at > ? AND status != 'cancelled'`).bind(month),
     db.prepare(`SELECT id, created_at, status, name, phone, total FROM orders ORDER BY created_at DESC LIMIT 8`),
     db.prepare(`SELECT (SELECT COUNT(*) FROM products) AS products, (SELECT COUNT(*) FROM products WHERE active=1) AS active,
-      (SELECT COUNT(*) FROM variants) AS variants, (SELECT COUNT(*) FROM categories) AS categories, (SELECT COUNT(*) FROM pages) AS pages,
+      (SELECT COUNT(*) FROM variants) AS variants, (SELECT COUNT(*) FROM reviews WHERE status='pending') AS reviews_pending, (SELECT COUNT(*) FROM categories) AS categories, (SELECT COUNT(*) FROM pages) AS pages,
       (SELECT COUNT(*) FROM products p WHERE p.image='' AND NOT EXISTS (SELECT 1 FROM variants v WHERE v.product_id=p.id AND v.image!='')) AS no_photo`),
   ]);
   return json({ byStatus: Object.fromEntries(st.results.map((r) => [r.status, r.n])), day: d1.results[0], month: d30.results[0], recent: recent.results, counts: cnt.results[0] });
@@ -477,7 +492,7 @@ async function uploadMedia(db, request) {
 
 // ---------- резервна копія ----------
 async function exportAll(db) {
-  const tables = ['settings', 'cat_groups', 'categories', 'products', 'variants', 'attributes', 'product_attrs', 'category_filters', 'pages', 'orders', 'redirects'];
+  const tables = ['settings', 'cat_groups', 'categories', 'products', 'variants', 'attributes', 'product_attrs', 'category_filters', 'pages', 'orders', 'redirects', 'reviews'];
   const res = await db.batch(tables.map((t) => db.prepare(`SELECT * FROM ${t}`)));
   const out = { exported_at: now() };
   tables.forEach((t, i) => { out[t] = res[i].results; });

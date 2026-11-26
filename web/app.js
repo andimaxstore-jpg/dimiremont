@@ -354,6 +354,29 @@
   }
 })();
 
+// Відгук: надсилаємо на модерацію
+(function () {
+  var f = document.querySelector('[data-review]');
+  if (!f) return;
+  f.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var err = f.querySelector('[data-rev-err]'), btn = f.querySelector('button');
+    var r = f.querySelector('input[name="rating"]:checked');
+    var data = { product: f.getAttribute('data-review'), rating: r ? +r.value : 0, name: f.elements.name.value.trim(), text: f.elements.text.value.trim(), website: f.elements.website.value };
+    var msg = !data.rating ? 'Оберіть оцінку від 1 до 5 зірок.' : data.name.length < 2 ? 'Вкажіть ваше ім’я.' : data.text.length < 5 ? 'Напишіть кілька слів про товар.' : '';
+    if (msg) { err.textContent = msg; err.hidden = false; return; }
+    err.hidden = true; btn.disabled = true;
+    fetch('/api/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) })
+      .then(function (res) { return res.json().then(function (j) { return [res.status, j]; }); })
+      .then(function (x) {
+        if (x[1].ok) { f.hidden = true; document.querySelector('[data-rev-ok]').hidden = false; return; }
+        err.textContent = x[0] === 429 ? 'Забагато відгуків за годину. Спробуйте пізніше.' : 'Перевірте поля форми і спробуйте ще раз.'; err.hidden = false;
+      })
+      .catch(function () { err.textContent = 'Немає з’єднання. Спробуйте ще раз.'; err.hidden = false; })
+      .then(function () { btn.disabled = false; });
+  });
+})();
+
 // Меню «Каталог»: закривати по кліку поза ним і по Esc
 (function () {
   var mm = document.querySelector('.mm');

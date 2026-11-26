@@ -165,6 +165,11 @@ function filterPanel(S, list, filters) {
 const sortTools = `<div class="tools"><label for="sort">Сортувати</label><select id="sort"><option value="">За замовчуванням</option><option value="asc">Спершу дешевші</option><option value="desc">Спершу дорожчі</option></select><span class="muted" data-found></span></div>`;
 
 // ---------- сторінки ----------
+const plural = (n, one, few, many) => {
+  const a = n % 10, b = n % 100;
+  return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many;
+};
+
 export function productPage(S, p) {
   const cat = p.cat;
   const opts = [];
@@ -256,6 +261,26 @@ export function productPage(S, p) {
     '@context': 'https://schema.org', ...variantLd(v0), name: p.title, url: `${site}/tovar/${p.slug}.html`, brand,
   };
   if (p.cover) prodLd.image = site + img(p.cover);
+  if (p.reviewCount) {
+    prodLd.aggregateRating = { '@type': 'AggregateRating', ratingValue: String(p.rating), reviewCount: p.reviewCount, bestRating: '5', worstRating: '1' };
+    prodLd.review = p.reviews.slice(0, 10).map((r) => ({
+      '@type': 'Review', author: { '@type': 'Person', name: r.name }, datePublished: String(r.created_at).slice(0, 10),
+      reviewBody: r.text, reviewRating: { '@type': 'Rating', ratingValue: String(r.rating), bestRating: '5', worstRating: '1' },
+    }));
+  }
+  const starsHtml = (v) => `<span class="stars" style="--r:${(v / 5) * 100}%" aria-hidden="true">★★★★★</span>`;
+  const revList = (p.reviews || []).map((r) => `<article class="rev"><div class="rev-h">${starsHtml(r.rating)}<b>${E(r.name)}</b><time datetime="${E(String(r.created_at).slice(0, 10))}">${E(new Date(r.created_at).toLocaleDateString('uk-UA'))}</time></div><p>${E(r.text)}</p></article>`).join('');
+  const reviewsHtml = `<section class="wrap block reviews" id="vidguky"><h2>Відгуки${p.reviewCount ? ` <span class="muted">(${p.reviewCount})</span>` : ''}</h2>
+<div class="rev-in"><div>${p.reviewCount ? `<div class="rev-sum">${starsHtml(p.rating)}<b>${String(p.rating).replace('.', ',')}</b><span class="muted">з 5 · ${p.reviewCount} ${plural(p.reviewCount, 'відгук', 'відгуки', 'відгуків')}</span></div>${revList}` : '<p class="muted">Відгуків ще немає. Купували цей товар? Розкажіть іншим покупцям.</p>'}</div>
+<form class="rev-form" data-review="${E(p.slug)}" novalidate><h3>Залишити відгук</h3>
+<fieldset class="rate"><legend>Ваша оцінка</legend><div class="rate-in">${[5, 4, 3, 2, 1].map((n) => `<input type="radio" name="rating" value="${n}" id="r${n}"><label for="r${n}" title="${n}">★</label>`).join('')}</div></fieldset>
+<label>Ваше ім’я<input name="name" maxlength="60" autocomplete="given-name" required></label>
+<label>Відгук<textarea name="text" rows="4" maxlength="2000" required></textarea></label>
+<input name="website" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
+<p class="err" data-rev-err hidden></p>
+<button class="btn">Надіслати відгук</button>
+<p class="note">Відгук з’явиться після перевірки модератором.</p></form>
+<p class="rev-ok" data-rev-ok hidden>Дякуємо! Ваш відгук з’явиться на сайті після перевірки.</p></div></section>`;
   const related = S.visible.filter((q) => q.category_id === p.category_id && q.id !== p.id).slice(0, 4);
   const relHtml = related.length ? `<section class="wrap block"><h2>Схожі товари</h2><div class="grid">${related.map(card).join('')}</div></section>` : '';
   const oldTxt = +v0.old_price > +v0.price ? money(v0.old_price) + ' ₴' : '';
@@ -264,6 +289,7 @@ export function productPage(S, p) {
 <div class="gallery"><div class="main-img"><img data-main src="${E(cover || phImg(p))}" alt="${E(p.title)}" width="720" height="720"${cover ? '' : ' class="ph"'}></div></div>
 <div class="info">
 <h1>${E(p.title)}</h1>
+${p.reviewCount ? `<a class="rate-line" href="#vidguky">${starsHtml(p.rating)} ${String(p.rating).replace('.', ',')} · ${p.reviewCount} ${plural(p.reviewCount, 'відгук', 'відгуки', 'відгуків')}</a>` : ''}
 <div class="sku-line">Артикул: <span data-sku>${E(v0.sku)}</span><span data-vsize></span></div>
 ${gift}
 <div class="buy"><div class="price-big"><s class="old" data-old${oldTxt ? '' : ' hidden'}>${oldTxt}</s> <span data-price>${money(v0.price)} ₴</span></div>${note}<p class="stock" data-stock></p>${freeFrom ? `<p class="ship-note">Доставка за тарифами перевізника, <b>безкоштовно від ${money(freeFrom)} ₴</b></p>` : ''}</div>
@@ -276,6 +302,7 @@ ${noPhoto}
 <ul class="feats">${feats}</ul>
 </div></section>
 <section class="wrap block about"><h2>Опис і характеристики</h2><div class="about-in"><div class="txt">${longDesc}</div><table class="specs">${specs}</table></div></section>
+${reviewsHtml}
 ${relHtml}`;
   return layout(S, {
     path: `tovar/${p.slug}.html`, title: p.seo_title || `${p.title} — купити, ціна від ${money(p.min)} ₴ | ${S.settings.shop_name}`,
