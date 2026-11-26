@@ -51,7 +51,7 @@ export function layout(S, { path, title, desc, body, ld = [], ogImage = '', robo
 ${FONTS}
 <link rel="stylesheet" href="/assets/style.css">
 ${ld.map((j) => `<script type="application/ld+json">${jsonLd(j)}</script>`).join('')}
-</head><body data-rel="/">
+</head><body data-rel="/"${+st.free_ship_from ? ` data-free-ship="${+st.free_ship_from}"` : ''}>
 <header class="top"><div class="wrap top-in">
 <a class="logo" href="/"><span class="logo-mark" aria-hidden="true"></span>${E(st.shop_name)}</a>
 ${nav}
@@ -221,8 +221,10 @@ export function productPage(S, p) {
       transitTime: { '@type': 'QuantitativeValue', minValue: 1, maxValue: 3, unitCode: 'DAY' },
     },
   };
-  const ship = S.settings.shipping_rate;
-  if (ship !== undefined && ship !== null && ship !== '') shipping.shippingRate = { '@type': 'MonetaryAmount', value: String(+ship), currency: 'UAH' };
+  // Вартість — за тарифами перевізника; від порогу free_ship_from — безкоштовно (тоді вказуємо 0 ₴).
+  const freeFrom = +S.settings.free_ship_from || 0;
+  const shipFor = (v) => (freeFrom && +v.price >= freeFrom
+    ? { ...shipping, shippingRate: { '@type': 'MonetaryAmount', value: '0', currency: 'UAH' } } : shipping);
   const returns = {
     '@type': 'MerchantReturnPolicy', applicableCountry: 'UA', returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
     merchantReturnDays: 14, returnMethod: 'https://schema.org/ReturnByMail', returnFees: 'https://schema.org/ReturnFeesCustomerResponsibility',
@@ -230,7 +232,7 @@ export function productPage(S, p) {
   const offer = (v) => ({
     '@type': 'Offer', price: String(+v.price), priceCurrency: 'UAH', itemCondition: 'https://schema.org/NewCondition',
     availability: v.in_stock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock', url: `${site}/tovar/${p.slug}.html#${v.sku}`,
-    shippingDetails: shipping, hasMerchantReturnPolicy: returns,
+    shippingDetails: shipFor(v), hasMerchantReturnPolicy: returns,
   });
   // Опції варіантів -> властивості schema.org, які приймає Google (color / size / pattern).
   const propOf = (o) => (o === 'Колір' ? 'color' : ['Розмір', 'Яруси'].includes(o) ? 'size' : 'pattern');
@@ -264,7 +266,7 @@ export function productPage(S, p) {
 <h1>${E(p.title)}</h1>
 <div class="sku-line">Артикул: <span data-sku>${E(v0.sku)}</span><span data-vsize></span></div>
 ${gift}
-<div class="buy"><div class="price-big"><s class="old" data-old${oldTxt ? '' : ' hidden'}>${oldTxt}</s> <span data-price>${money(v0.price)} ₴</span></div>${note}<p class="stock" data-stock></p></div>
+<div class="buy"><div class="price-big"><s class="old" data-old${oldTxt ? '' : ' hidden'}>${oldTxt}</s> <span data-price>${money(v0.price)} ₴</span></div>${note}<p class="stock" data-stock></p>${freeFrom ? `<p class="ship-note">Доставка за тарифами перевізника, <b>безкоштовно від ${money(freeFrom)} ₴</b></p>` : ''}</div>
 <form class="variant-form" onsubmit="return false">${selectors}
 <div class="buy-row"><div class="qty"><button type="button" data-qty="-1" aria-label="Менше">−</button><input id="qty" type="number" min="1" value="1" inputmode="numeric" aria-label="Кількість"><button type="button" data-qty="1" aria-label="Більше">+</button></div>
 <button type="button" class="btn" data-add>Додати в кошик</button></div>
@@ -349,7 +351,7 @@ ${h.image ? `<a class="hero-img" href="${E(href(h.image_url || h.btn_url || '/ka
 ${hits.length ? `<section class="wrap block"><div class="row-head"><h2>${E(H.hits_title || 'Хіти продажів')}</h2><a href="/katalog.html">Усі товари →</a></div><div class="grid">${hits.map(card).join('')}</div></section>` : ''}
 ${news.length ? `<section class="wrap block"><div class="row-head"><h2>${E(H.new_title || 'Новинки')}</h2></div><div class="grid">${news.map(card).join('')}</div></section>` : ''}
 <section class="wrap block perks"><div><b>${S.visible.length} товарів, ${nVar} артикулів</b><span>Кожна картка об’єднує всі кольори й малюнки одного товару</span></div>
-<div><b>Доставка</b><span>${E(st.delivery)}</span></div><div><b>Оплата</b><span>${E(st.payment)}</span></div></section>
+<div><b>${+st.free_ship_from ? `Безкоштовна доставка від ${money(st.free_ship_from)} ₴` : 'Доставка'}</b><span>${E(st.delivery)}</span></div><div><b>Оплата</b><span>${E(st.payment)}</span></div></section>
 ${stripTags(H.seo_text) ? `<section class="wrap block seo">${H.seo_heading ? `<h2>${E(H.seo_heading)}</h2>` : ''}${H.seo_text}</section>` : ''}`;
   const org = { '@context': 'https://schema.org', '@type': 'Store', name: st.shop_name, url: site + '/', telephone: st.phone, priceRange: '₴₴', areaServed: 'UA' };
   const siteLd = {

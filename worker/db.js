@@ -69,6 +69,8 @@ async function init(env) {
 async function applyPatches(db) {
   await patchPhotos(db);
   await patchRemontFirst(db);
+  if (!(await patchDone(db, 'patch_free_ship_v1')))
+    await db.batch([db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('free_ship_from', ?)`).bind(JSON.stringify('5000')), patchMark(db, 'patch_free_ship_v1')]);
 }
 
 const patchDone = async (db, key) => !!(await db.prepare(`SELECT value FROM settings WHERE key=?`).bind(key).first());

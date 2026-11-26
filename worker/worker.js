@@ -259,6 +259,9 @@ async function order(request, env) {
     pickupAddress: d.method === 'pickup' ? cut(d.pickupAddress) : '',
   };
   const comment = cut(o.comment, 1000);
+  let freeFrom = 0;
+  if (env.DB) { try { freeFrom = +(await loadStore(env)).settings.free_ship_from || 0; } catch {} }
+  const freeShip = d.method !== 'pickup' && freeFrom > 0 && total >= freeFrom;
 
   let saved = false;
   if (env.DB) {
@@ -271,7 +274,7 @@ async function order(request, env) {
     } catch (e) { console.log('order_save_failed', String(e)); }
   }
 
-  const tg = await notifyTelegram(env, { id, name, phone, email: c.email, delivery, payment: o.payment, comment, callMe: o.callMe, items, total });
+  const tg = await notifyTelegram(env, { id, name, phone, email: c.email, delivery, payment: o.payment, comment, callMe: o.callMe, items, total, freeShip });
   if (saved && tg.sent) await env.DB.prepare(`UPDATE orders SET telegram_ok = 1 WHERE id = ?`).bind(id).run().catch(() => {});
   if (!saved && !tg.sent) { console.log('order_failed', tg.errors); return json({ error: 'telegram_failed', details: tg.errors }, 502); }
   return json({ ok: true, id, total });
@@ -291,6 +294,7 @@ async function notifyTelegram(env, o) {
     `<b>Телефон:</b> ${esc(o.phone)}\n` +
     (o.email ? `<b>Email:</b> ${esc(o.email)}\n` : '') +
     `\n<b>Доставка:</b> ${method}\n${deliv}\n` +
+    (o.freeShip ? '🎁 <b>Безкоштовна доставка</b> (сума від порогу)\n' : '') +
     `<b>Оплата:</b> ${pay}\n` +
     (o.comment ? `<b>Коментар:</b> ${esc(o.comment)}\n` : '') +
     (o.callMe === false ? '<i>Клієнт просить не дзвонити для підтвердження</i>\n' : '') +

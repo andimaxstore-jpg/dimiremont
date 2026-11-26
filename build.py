@@ -481,7 +481,7 @@ def export_seed(P):
                          f'<h2>Контакти</h2><p>Телефон: {E(C.PHONE)}</p>'}]
     settings = {'site_url': C.SITE_URL, 'shop_name': C.SHOP_NAME, 'phone': C.PHONE, 'telegram': C.TELEGRAM, 'viber': C.VIBER,
                 'email': C.EMAIL, 'city': C.CITY, 'delivery': C.DELIVERY, 'payment': C.PAYMENT,
-                'pickup_address': C.PICKUP_ADDRESS, 'pickup_hours': C.PICKUP_HOURS,
+                'pickup_address': C.PICKUP_ADDRESS, 'pickup_hours': C.PICKUP_HOURS, 'free_ship_from': '5000',
                 'colors': {'Бежевий': '#b9a48f', 'Темно-сірий': '#3c3e42', 'Білий': '#f3f3f1', 'Чорний': '#151515'}}
     seed = {'settings': settings, 'home': home, 'groups': [{k: g[k] for k in ('id', 'name', 'sort')} for g in groups],
             'categories': cats, 'attributes': attrs, 'products': prods, 'filters': filters, 'pages': pages}

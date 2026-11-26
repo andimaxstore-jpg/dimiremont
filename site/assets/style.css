@@ -261,6 +261,7 @@ pre{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);
 .badge.sale{background:var(--accent);color:var(--accent-fg)}
 .badge.out{background:var(--muted);color:var(--surface)}
 .stock{margin:6px 0 0;font-size:.88rem;font-weight:600}
+.ship-note{margin:6px 0 0;font-size:.88rem;color:var(--muted)}
 .stock.in{color:var(--ok)} .stock.out{color:var(--sale)}
 .stock:empty{display:none}
 .cat-desc{margin-top:28px}

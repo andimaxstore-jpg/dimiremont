@@ -19,7 +19,7 @@ const now = () => new Date().toISOString();
 const TR = { а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ь: '', ю: 'iu', я: 'ia', ы: 'y', э: 'e', ё: 'io', ъ: '' };
 export const slugify = (s) => String(s || '').toLowerCase().replace(/[’']/g, '').split('').map((c) => (c in TR ? TR[c] : c)).join('').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
 
-const SETTINGS_KEYS = ['site_url', 'shop_name', 'phone', 'telegram', 'viber', 'email', 'city', 'delivery', 'payment', 'pickup_address', 'pickup_hours', 'colors'];
+const SETTINGS_KEYS = ['site_url', 'shop_name', 'phone', 'telegram', 'viber', 'email', 'city', 'delivery', 'payment', 'pickup_address', 'pickup_hours', 'free_ship_from', 'colors'];
 export const ORDER_STATUSES = ['new', 'confirmed', 'paid', 'shipped', 'done', 'cancelled'];
 
 export async function adminApi(request, env, url) {

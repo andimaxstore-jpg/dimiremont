@@ -160,6 +160,7 @@
       });
       list.innerHTML = html;
       document.querySelector('[data-total]').textContent = money(total());
+      shipText();
       list.querySelectorAll('[data-d]').forEach(function (b) {
         b.addEventListener('click', function () { var c = load(), k = +b.getAttribute('data-d'); c[k].qty = Math.max(1, c[k].qty + +b.getAttribute('data-v')); save(c); drawCart(); });
       });
@@ -188,6 +189,13 @@
 
     // --- спосіб доставки
     var method = 'np', city = null, branch = null, manual = false;
+    function shipText() {
+      var free = +document.body.getAttribute('data-free-ship') || 0;
+      var el = document.querySelector('[data-ship]');
+      if (!el) return;
+      if (method === 'pickup' || (free && total() >= free)) el.textContent = 'безкоштовно';
+      else el.textContent = 'за тарифами перевізника' + (free ? ' (безкоштовно від ' + money(free) + ')' : '');
+    }
     function setMethod(m) {
       method = m;
       checkout.querySelectorAll('[data-for]').forEach(function (el) { el.hidden = el.getAttribute('data-for').split(' ').indexOf(m) < 0; });
@@ -196,7 +204,7 @@
       checkout.querySelector('[data-pay="cash"]').hidden = !pickup;
       var pay = form.querySelector('input[name="payment"]:checked');
       if (pay && pay.closest('label').hidden) form.querySelector('input[name="payment"][value="' + (pickup ? 'cash' : 'cod') + '"]').checked = true;
-      document.querySelector('[data-ship]').textContent = pickup ? 'безкоштовно' : 'за тарифами перевізника';
+      shipText();
       resetCity();
     }
     form.querySelectorAll('input[name="method"]').forEach(function (r) { r.addEventListener('change', function () { setMethod(r.value); }); });

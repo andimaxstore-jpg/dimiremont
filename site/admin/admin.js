@@ -698,7 +698,7 @@
       ${field('Місто / регіон', 'city', s.city)}</div></div>
     <div class="card"><h2>Доставка і оплата</h2><div class="grid2">
       ${field('Доставка (коротко)', 'delivery', s.delivery, { span: true })}${field('Оплата (коротко)', 'payment', s.payment, { span: true })}
-      ${field('Адреса самовивозу', 'pickup_address', s.pickup_address)}${field('Час видачі', 'pickup_hours', s.pickup_hours)}</div></div>
+      ${field('Безкоштовна доставка від, ₴', 'free_ship_from', s.free_ship_from, { hint: 'порожньо — без безкоштовної доставки' })}${field('Адреса самовивозу', 'pickup_address', s.pickup_address)}${field('Час видачі', 'pickup_hours', s.pickup_hours)}</div></div>
     <div class="savebar"><button class="btn">Зберегти</button></div></form>
     <div class="card" style="margin-top:16px"><h2>Сповіщення в Telegram</h2><p class="hint">Надсилає тестове повідомлення на TELEGRAM_CHAT_ID і показує, що відповів Telegram.</p>
       <button type="button" class="btn ghost" id="tgtest">Надіслати тестове повідомлення</button><div id="tgres" style="margin-top:10px"></div></div>
