@@ -2,6 +2,7 @@
  * База D1: схема, первинне наповнення з data/seed.json і завантаження даних для сторінок.
  * Схема створюється сама при першому запиті (CREATE TABLE IF NOT EXISTS), тож окремих міграцій запускати не треба.
  */
+import { VISITS_TABLE } from './visits.js';
 import seed from '../data/seed.json';
 import photosRemont from '../data/photos_remont.json';
 import guidePage from '../data/guide_page.json';
@@ -84,6 +85,8 @@ async function applyPatches(db) {
   // Таблиця відгуків (додана після запуску) — створюється, якщо її ще немає.
   await db.batch([db.prepare(`CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, name TEXT NOT NULL, rating INTEGER NOT NULL,
      text TEXT DEFAULT '', status TEXT DEFAULT 'pending', ip TEXT DEFAULT '', created_at TEXT NOT NULL)`), db.prepare(`CREATE INDEX IF NOT EXISTS reviews_prod ON reviews(product_id, status)`)]);
+  // Облік відвідувань сайту (розділ «Відвідування» на «Огляді»).
+  await db.batch(VISITS_TABLE.map((q) => db.prepare(q)));
   await patchAccounts(db);
   // Журнал сповіщень покупцям (email/SMS) у замовленні.
   if (!(await patchDone(db, 'patch_notify_v1'))) {

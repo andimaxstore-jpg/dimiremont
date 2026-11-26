@@ -2,7 +2,8 @@
  * API бек-офісу: /api/admin/*. Усе, крім входу, вимагає cookie адміністратора.
  */
 import { isAuthed, login, logoutCookie } from './auth.js';
-import { bumpVersion } from './db.js';
+import { bumpVersion, loadStore } from './db.js';
+import { visitsReport } from './visits.js';
 import { hashPassword, normPhone, normEmail, publicCustomer, customerOrder } from './account.js';
 import { checkoutConfig, cleanCheckout } from './checkout.js';
 import { loadNotify, cleanNotify, processOrder, testNotify, SMS_PROVIDERS } from './notify.js';
@@ -46,6 +47,7 @@ export async function adminApi(request, env, url) {
   switch (res) {
     case 'me': return json({ ok: true });
     case 'dashboard': return dashboard(db);
+    case 'visits': return json(await visitsReport(db, url, await loadStore(env).catch(() => null)));
     case 'orders':
       if (id === 'export.csv') return ordersCsv(db, url);
       if (!id && m === 'GET') return listOrders(db, url);
