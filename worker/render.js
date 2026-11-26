@@ -211,18 +211,47 @@ export function productPage(S, p) {
   const noPhoto = p.cover ? '' : '<p class="note">Фото кожного дизайну додамо найближчим часом. Менеджер надішле фото обраного варіанту перед відправкою.</p>';
   const site = String(S.settings.site_url || '').replace(/\/$/, '');
   const [cr, crld] = crumbs(S, [['Головна', '/'], [cat.name, `/kategoriya/${cat.slug}.html`], [p.title, '']]);
+  // Розмітка для Google (Merchant listings). Доставка/повернення — як на сторінці «Доставка і оплата».
+  const shipping = {
+    '@type': 'OfferShippingDetails',
+    shippingDestination: { '@type': 'DefinedRegion', addressCountry: 'UA' },
+    deliveryTime: {
+      '@type': 'ShippingDeliveryTime',
+      handlingTime: { '@type': 'QuantitativeValue', minValue: 0, maxValue: 1, unitCode: 'DAY' },
+      transitTime: { '@type': 'QuantitativeValue', minValue: 1, maxValue: 3, unitCode: 'DAY' },
+    },
+  };
+  const ship = S.settings.shipping_rate;
+  if (ship !== undefined && ship !== null && ship !== '') shipping.shippingRate = { '@type': 'MonetaryAmount', value: String(+ship), currency: 'UAH' };
+  const returns = {
+    '@type': 'MerchantReturnPolicy', applicableCountry: 'UA', returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
+    merchantReturnDays: 14, returnMethod: 'https://schema.org/ReturnByMail', returnFees: 'https://schema.org/ReturnFeesCustomerResponsibility',
+  };
   const offer = (v) => ({
     '@type': 'Offer', price: String(+v.price), priceCurrency: 'UAH', itemCondition: 'https://schema.org/NewCondition',
     availability: v.in_stock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock', url: `${site}/tovar/${p.slug}.html#${v.sku}`,
+    shippingDetails: shipping, hasMerchantReturnPolicy: returns,
   });
-  const prodLd = {
-    '@context': 'https://schema.org', '@type': 'ProductGroup', name: p.title, description: metaDesc, productGroupID: p.slug,
-    url: `${site}/tovar/${p.slug}.html`, brand: { '@type': 'Brand', name: S.settings.shop_name },
-    variesBy: opts.map((o) => (o === 'Колір' ? 'https://schema.org/color' : ['Малюнок', 'Дизайн'].includes(o) ? 'https://schema.org/pattern' : 'https://schema.org/size')),
-    hasVariant: p.variants.map((v) => ({
-      '@type': 'Product', sku: v.sku, name: `${p.title} — ${Object.values(v.options).join(', ') || v.sku}`,
-      ...(v.image ? { image: site + img(v.image) } : {}), offers: offer(v),
-    })),
+  // Опції варіантів -> властивості schema.org, які приймає Google (color / size / pattern).
+  const propOf = (o) => (o === 'Колір' ? 'color' : ['Розмір', 'Яруси'].includes(o) ? 'size' : 'pattern');
+  const vprops = (v) => {
+    const r = {};
+    for (const o of opts) if (v.options[o]) { const k = propOf(o); r[k] = r[k] ? `${r[k]}, ${v.options[o]}` : String(v.options[o]); }
+    return r;
+  };
+  const groupId = `SW-G${p.id}`;
+  const brand = { '@type': 'Brand', name: S.settings.shop_name };
+  const variantLd = (v) => ({
+    '@type': 'Product', sku: v.sku, name: `${p.title} — ${Object.values(v.options).join(', ') || v.sku}`, description: metaDesc,
+    ...vprops(v), ...(v.image ? { image: site + img(v.image) } : {}), offers: offer(v),
+  });
+  const prodLd = n > 1 && opts.length ? {
+    '@context': 'https://schema.org', '@type': 'ProductGroup', name: p.title, description: metaDesc, productGroupID: groupId,
+    url: `${site}/tovar/${p.slug}.html`, brand,
+    variesBy: [...new Set(opts.map((o) => 'https://schema.org/' + propOf(o)))],
+    hasVariant: p.variants.map(variantLd),
+  } : {
+    '@context': 'https://schema.org', ...variantLd(v0), name: p.title, url: `${site}/tovar/${p.slug}.html`, brand,
   };
   if (p.cover) prodLd.image = site + img(p.cover);
   const related = S.visible.filter((q) => q.category_id === p.category_id && q.id !== p.id).slice(0, 4);
