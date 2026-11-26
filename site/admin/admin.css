@@ -143,3 +143,22 @@ table.tbl{border-collapse:collapse;width:100%;font-size:.88rem}
 .emo-pop button:hover{background:var(--bg)}
 select.sm{width:auto;padding:4px 8px;font-size:.85rem}
 @media (max-width:520px){.emo-pop{grid-template-columns:repeat(6,34px)}}
+/* відвідування сайту */
+.seg{display:flex;gap:4px;flex-wrap:wrap}
+.seg .btn.on{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.v-custom{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.v-custom input{width:auto}
+.v-range{margin:-6px 0 12px}
+.vchart{display:flex;align-items:stretch;gap:2px;height:160px;padding-bottom:20px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.vcol{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;position:relative}
+.vcol:hover .vfill{background:var(--accent)}
+.vfill{background:var(--info);border-radius:4px 4px 0 0}
+.vday{position:absolute;top:100%;left:0;font-size:.7rem;color:var(--muted);white-space:nowrap;padding-top:3px}
+.v-grid{margin-top:16px}
+.vlist{display:grid;gap:4px}
+.vrow{position:relative;display:flex;justify-content:space-between;gap:10px;padding:4px 8px;border-radius:4px;font-size:.88rem;overflow:hidden}
+.vbar{position:absolute;top:0;bottom:0;left:0;background:var(--info);opacity:.14;border-radius:4px}
+.vname{position:relative;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vnum{position:relative;font-variant-numeric:tabular-nums;color:var(--muted)}
+.hint code{font-size:.85em;background:var(--bg);padding:1px 4px;border-radius:4px}
+#visits>.head h2{margin:0 auto 0 0}

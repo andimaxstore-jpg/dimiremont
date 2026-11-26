@@ -231,8 +231,75 @@
     <div class="card"><div class="head"><h2>Останні замовлення</h2><a href="#/orders" class="btn ghost sm">Усі замовлення</a></div>
     ${d.recent.length ? `<div class="tbl-wrap"><table class="tbl"><tr><th>№</th><th>Дата</th><th>Клієнт</th><th>Телефон</th><th class="num">Сума</th><th>Статус</th></tr>
     ${d.recent.map((o) => `<tr class="click" data-href="#/orders/${esc(o.id)}"><td>${esc(o.id)}</td><td>${fmtDate(o.created_at)}</td><td>${esc(o.name)}</td><td>${esc(o.phone)}</td><td class="num">${money(o.total)}</td><td>${pill(o.status)}</td></tr>`).join('')}
-    </table></div>` : '<p class="muted">Замовлень ще немає. Щойно покупець оформить кошик на сайті, замовлення з’явиться тут.</p>'}</div>`;
+    </table></div>` : '<p class="muted">Замовлень ще немає. Щойно покупець оформить кошик на сайті, замовлення з’явиться тут.</p>'}</div>
+    <div class="card" id="visits"><div class="head"><h2>Відвідування сайту</h2></div><div class="v-body"><p class="muted">Завантаження…</p></div></div>`;
     clickRows(view);
+    visitsBlock($('#visits'));
+  }
+  // ---------- відвідування сайту (блок на «Огляді») ----------
+  const SRC = { '': 'Напряму (закладка, адреса, застосунок)', google: 'Google', facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok', telegram: 'Telegram', viber: 'Viber', youtube: 'YouTube', bing: 'Bing', duckduckgo: 'DuckDuckGo', prom: 'Prom.ua', rozetka: 'Rozetka', olx: 'OLX', pinterest: 'Pinterest' };
+  const DEV = { mobile: 'Телефон', desktop: 'Комп’ютер', tablet: 'Планшет', '': 'Невідомо' };
+  const PERIODS = [['today', 'Сьогодні'], ['yesterday', 'Вчора'], ['7', '7 днів'], ['30', '30 днів'], ['90', '90 днів'], ['custom', 'Свій період']];
+  const num = (v) => String(+v || 0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const dayShift = (day, n) => { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const dayFmt = (day, long) => new Date(day + 'T12:00:00Z').toLocaleDateString('uk-UA', long ? { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' } : { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+  const flag = (cc) => (/^[A-Z]{2}$/.test(cc || '') ? String.fromCodePoint(...[...cc].map((c) => 127397 + c.charCodeAt(0))) + ' ' : '');
+  function barList(rows, label, value) {
+    const max = Math.max(1, ...rows.map(value));
+    return rows.length ? `<div class="vlist">${rows.map((r) => `<div class="vrow" title="${esc(label(r, true))}: ${num(value(r))}"><div class="vbar" style="width:${Math.max(2, value(r) / max * 100)}%"></div><span class="vname">${label(r)}</span><span class="vnum">${num(value(r))}</span></div>`).join('')}</div>` : '<p class="muted">Немає даних за цей період.</p>';
+  }
+  function visitsBlock(card) {
+    let per = '7'; try { per = localStorage.getItem('dr_visits_per') || '7'; } catch (e) { /* приватний режим */ }
+    let custom = null; try { custom = JSON.parse(localStorage.getItem('dr_visits_custom') || 'null'); } catch (e) { custom = null; }
+    const body = $('.v-body', card);
+    const head = $('.head', card);
+    head.insertAdjacentHTML('beforeend', `<div class="seg" role="group" aria-label="Період">${PERIODS.map(([k, t]) => `<button type="button" class="btn ghost sm" data-per="${k}">${t}</button>`).join('')}</div>
+      <div class="v-custom" hidden><input type="date" name="from" aria-label="Від"> — <input type="date" name="to" aria-label="До"> <button type="button" class="btn sm" data-apply>Показати</button></div>`);
+    const cust = $('.v-custom', head), fIn = $('[name=from]', cust), tIn = $('[name=to]', cust);
+    async function load() {
+      $$('[data-per]', head).forEach((b) => b.classList.toggle('on', b.dataset.per === per));
+      cust.hidden = per !== 'custom';
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' });
+      let from = today, to = today;
+      if (per === 'yesterday') from = to = dayShift(today, -1);
+      else if (per === 'custom') { if (!custom) custom = { from: dayShift(today, -6), to: today }; fIn.value = from = custom.from; tIn.value = to = custom.to; }
+      else if (per !== 'today') from = dayShift(today, 1 - (+per || 7));
+      body.innerHTML = '<p class="muted">Завантаження…</p>';
+      let d; try { d = await api('GET', `visits?from=${from}&to=${to}`); } catch (e) { body.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+      render(d);
+    }
+    head.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-per]');
+      if (b) { per = b.dataset.per; try { localStorage.setItem('dr_visits_per', per); } catch (x) { /* */ } load(); }
+      if (e.target.closest('[data-apply]') && fIn.value && tIn.value) {
+        custom = { from: fIn.value, to: tIn.value }; try { localStorage.setItem('dr_visits_custom', JSON.stringify(custom)); } catch (x) { /* */ } load();
+      }
+    });
+    function render(d) {
+      const t = d.total, o = d.orders;
+      const pct = (x) => x.toFixed(1).replace('.', ',');
+      const range = d.from === d.to ? dayFmt(d.from, true) : `${dayFmt(d.from, true)} — ${dayFmt(d.to, true)}`;
+      const maxV = Math.max(1, ...d.days.map((x) => x.visitors));
+      const step = Math.ceil(d.days.length / 10);
+      body.innerHTML = `<p class="muted v-range">${esc(range)}</p>
+      <div class="stats">
+        <div class="stat"><b>${num(t.visitors)}</b><span>відвідувачів (людей)</span></div>
+        <div class="stat"><b>${num(t.visits)}</b><span>заходів на сайт</span></div>
+        <div class="stat"><b>${num(t.views)}</b><span>переглядів сторінок${t.visits ? ' · ' + pct(t.views / t.visits) + ' за захід' : ''}</span></div>
+        <div class="stat"><b>${num(o.n)}</b><span>замовлень · ${money(o.sum)}${t.visitors ? ' · купили ' + pct(o.n / t.visitors * 100) + '% відвідувачів' : ''}</span></div>
+      </div>
+      ${!t.views ? '<p class="muted">За цей період відвідувань не записано. Облік працює з дня ввімкнення цієї функції; ваші власні перегляди (коли ви увійшли в адмінку) і пошукові роботи не рахуються.</p>' : ''}
+      ${d.days.length > 1 && t.views ? `<h3>Відвідувачі по днях</h3><div class="vchart" role="img" aria-label="Відвідувачі по днях">${d.days.map((x, i) => `<div class="vcol" title="${esc(dayFmt(x.day, true))}: ${num(x.visitors)} відвідувачів, ${num(x.views)} переглядів"><div class="vfill" style="height:${x.visitors ? Math.max(3, x.visitors / maxV * 100) : 0}%"></div><span class="vday">${i % step === 0 ? esc(dayFmt(x.day)) : ''}</span></div>`).join('')}</div><p class="hint">Наведіть на стовпчик, щоб побачити число. Найбільше — ${num(maxV)} за день.</p>` : ''}
+      ${t.views ? `<div class="grid2 v-grid">
+        <div><h3>Звідки приходять</h3>${barList(d.sources, (r) => esc(SRC[r.src] || r.src), (r) => r.visits)}</div>
+        <div><h3>Популярні сторінки</h3>${barList(d.pages, (r, plain) => (plain ? esc(r.title || r.path) : `<a href="${esc(r.path)}" target="_blank" rel="noopener">${esc(r.title || r.path)}</a>`), (r) => r.views)}</div>
+        <div><h3>Пристрої</h3>${barList(d.devices, (r) => esc(DEV[r.device] || r.device), (r) => r.visitors)}</div>
+        <div><h3>Місто / країна</h3>${barList(d.geo, (r) => esc(flag(r.country) + (r.city || r.country || 'Невідомо')), (r) => r.visitors)}</div>
+        ${d.referrers.length ? `<div class="span2"><h3>Сайти, з яких перейшли</h3>${barList(d.referrers, (r) => esc(r.ref), (r) => r.visits)}</div>` : ''}
+      </div>` : ''}
+      <p class="hint">«Відвідувачі» — різні люди за кожен день (хто зайшов і в понеділок, і у вівторок, рахується двічі). «Заходи» — скільки разів прийшли на сайт ззовні. Без cookie і без збереження IP-адрес. Щоб бачити рекламу окремо, додавайте до посилань мітку, напр. <code>?utm_source=tiktok</code>.</p>`;
+    }
+    load();
   }
   function clickRows(root) {
     root.addEventListener('click', (e) => {

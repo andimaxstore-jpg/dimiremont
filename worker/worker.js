@@ -20,6 +20,7 @@ import * as R from './render.js';
 import cartTpl from './cart.html';
 import { accountApi, currentCustomer, rememberFromOrder, productsBySlugs } from './account.js';
 import { processOrder } from './notify.js';
+import { trackView } from './visits.js';
 import { checkoutConfig, activeDelivery, paymentsFor, paymentTitle, CITY_KINDS, BRANCH_KINDS, ADDRESS_KINDS } from './checkout.js';
 
 const NP_URL = 'https://api.novaposhta.ua/v2.0/json/';
@@ -42,7 +43,13 @@ export default {
       }
       if (url.pathname.startsWith('/api/')) return await api(request, env, ctx, url);
       if (url.pathname.startsWith('/media/') && env.DB) return await media(env, url);
-      if (env.DB && (request.method === 'GET' || request.method === 'HEAD')) return await storefront(request, env, url);
+      if (env.DB && (request.method === 'GET' || request.method === 'HEAD')) {
+        const res = await storefront(request, env, url);
+        // Облік відвідувань (лише HTML-сторінки), у фоні — сторінка віддається одразу.
+        if ((res.headers.get('content-type') || '').startsWith('text/html'))
+          ctx.waitUntil(trackView(request, env, url, res.status).catch((e) => console.log('visit_error', e && e.message)));
+        return res;
+      }
       return env.ASSETS.fetch(request);
     } catch (e) {
       console.log('server_error', e && e.stack || e);
