@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var ON = ['np', 'np_courier', 'up', 'pickup'];
   // Назви з адмінки («Доставка й оплата»)
   try {
-    var cc = JSON.parse(page.getAttribute('data-checkout') || '{}');
+    var cc = JSON.parse(page.getAttribute('data-ship-cfg') || '{}');
     Object.keys(cc.d || {}).forEach(function (k) { DELIV[k] = cc.d[k]; });
     Object.keys(cc.p || {}).forEach(function (k) { PAY[k] = cc.p[k]; });
     if (cc.on && cc.on.length) ON = cc.on;

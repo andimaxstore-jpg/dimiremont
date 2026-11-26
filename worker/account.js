@@ -146,6 +146,8 @@ export async function accountApi(request, env, url) {
   if (path === 'logout') return json({ ok: true }, 200, { 'set-cookie': logoutCookie });
 
   const c = await currentCustomer(request, env);
+  // «Хто я?» для гостя — звичайна відповідь без помилки (сайт питає це на кожній сторінці)
+  if (!c && path === 'me' && m === 'GET') return json({ customer: null });
   if (!c) return json({ error: 'unauthorized' }, 401, { 'set-cookie': logoutCookie });
 
   if (path === 'me' && m === 'GET') return json({ customer: publicCustomer(c) });

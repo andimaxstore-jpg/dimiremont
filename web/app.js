@@ -140,7 +140,8 @@
   }
 
   // ---------- кошик та оформлення ----------
-  var checkout = document.querySelector('[data-checkout]');
+  // лише на сторінці кошика (є форма замовлення), щоб збіг атрибута на інших сторінках не зламав увесь скрипт
+  var checkout = document.getElementById('order-form') ? document.querySelector('.checkout[data-checkout]') : null;
   if (checkout) {
     var form = document.getElementById('order-form');
     var list = document.querySelector('[data-cart-list]');
@@ -415,14 +416,12 @@
       }
       if (d.address) put('o-addr', d.address);
     }
-    var hasAcc = false; try { hasAcc = !!localStorage.getItem('dr-acc'); } catch (e) {}
-    if (hasAcc) {
-      fetch('/api/account/me', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
-        if (!d || !d.customer) { if (window.DR) window.DR.setAccount(null); throw 0; }
-        loggedIn = true; prefill(d.customer);
-        if (accNote) { accNote.innerHTML = 'Дані підставлено з вашого <a href="/kabinet.html#profile">кабінету</a>. Замовлення збережеться в історії.'; accNote.hidden = false; }
-      }).catch(function () { guestNote(); });
-    } else guestNote();
+    // Питаємо сервер завжди: вхід міг бути на іншій сторінці, а позначка в браузері — загубитися
+    fetch('/api/account/me', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d || !d.customer) { if (window.DR) window.DR.setAccount(null); throw 0; }
+      loggedIn = true; if (window.DR) window.DR.setAccount(d.customer); prefill(d.customer);
+      if (accNote) { accNote.innerHTML = 'Дані підставлено з вашого <a href="/kabinet.html#profile">кабінету</a>. Замовлення збережеться в історії.'; accNote.hidden = false; }
+    }).catch(function () { guestNote(); });
     function guestNote() {
       if (!accNote) return;
       accNote.innerHTML = 'Маєте кабінет? <a href="/kabinet.html?next=koshyk">Увійдіть</a>, і дані підставляться самі, а замовлення збережеться в історії.';
@@ -504,8 +503,13 @@
   window.DR = { wishList: wl, setWish: setWl, sendWish: send, account: acc, setAccount: setAcc, paint: paint };
   paint();
   // Раз за візит підтягуємо збережене в кабінеті (наприклад, з іншого пристрою)
+  // Раз за візит звіряємо з сервером: чи увійшов покупець (cookie) і що збережено в кабінеті
   var synced = false; try { synced = !!sessionStorage.getItem('dr-wsync'); sessionStorage.setItem('dr-wsync', '1'); } catch (e) {}
-  if (acc() && !synced && !document.querySelector('[data-account]')) {
-    send(wl(), []).then(function (d) { if (d && d.items) setWl(d.items.map(function (i) { return i.slug; })); });
+  if (!synced && !document.querySelector('[data-account]')) {
+    fetch('/api/account/me', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d) return;
+      setAcc(d.customer || null);
+      if (d.customer) send(wl(), []).then(function (w) { if (w && w.items) setWl(w.items.map(function (i) { return i.slug; })); });
+    }).catch(function () {});
   }
 })();
