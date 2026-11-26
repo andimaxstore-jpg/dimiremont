@@ -4,6 +4,7 @@
  */
 import seed from '../data/seed.json';
 import photosRemont from '../data/photos_remont.json';
+import guidePage from '../data/guide_page.json';
 
 export const SCHEMA_VERSION = '1';
 
@@ -85,6 +86,7 @@ async function applyPatches(db) {
   await patchAccounts(db);
   await patchPhotos(db);
   await patchRemontFirst(db);
+  await patchGuide(db);
   if (!(await patchDone(db, 'patch_free_ship_v1')))
     await db.batch([db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('free_ship_from', ?)`).bind(JSON.stringify('5000')), patchMark(db, 'patch_free_ship_v1')]);
 }
@@ -118,6 +120,19 @@ async function patchRemontFirst(db) {
   st.push(db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('home', ?)`).bind(JSON.stringify(home)));
   st.push(patchMark(db, key));
   await db.batch(st);
+  await bumpVersion(db);
+}
+
+/** Одноразово: сторінка «Як працювати з самоклеючими товарами для ремонту» (якщо такої адреси ще немає). Далі редагується в адмінці. */
+async function patchGuide(db) {
+  const key = 'patch_guide_v1';
+  if (await patchDone(db, key)) return;
+  const g = guidePage;
+  await db.batch([
+    db.prepare(`INSERT OR IGNORE INTO pages (slug, title, content, seo_title, seo_desc, in_menu, in_footer, sort, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`)
+      .bind(g.slug, g.title, g.content, g.seo_title, g.seo_desc, g.in_menu, g.in_footer, g.sort),
+    patchMark(db, key),
+  ]);
   await bumpVersion(db);
 }
 
