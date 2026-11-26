@@ -87,6 +87,11 @@ async function applyPatches(db) {
      text TEXT DEFAULT '', status TEXT DEFAULT 'pending', ip TEXT DEFAULT '', created_at TEXT NOT NULL)`), db.prepare(`CREATE INDEX IF NOT EXISTS reviews_prod ON reviews(product_id, status)`)]);
   // Облік відвідувань сайту (розділ «Відвідування» на «Огляді»).
   await db.batch(VISITS_TABLE.map((q) => db.prepare(q)));
+  // Позначка js=1 — запис від лічильника в браузері (див. visits.js). Старі записи з сервера мають js=0.
+  if (!(await patchDone(db, 'patch_visits_js_v1'))) {
+    try { await db.prepare(`ALTER TABLE visits ADD COLUMN js INTEGER DEFAULT 0`).run(); } catch { /* колонка вже є */ }
+    await patchMark(db, 'patch_visits_js_v1').run();
+  }
   await patchAccounts(db);
   // Журнал сповіщень покупцям (email/SMS) у замовленні.
   if (!(await patchDone(db, 'patch_notify_v1'))) {

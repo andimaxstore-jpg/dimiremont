@@ -892,6 +892,9 @@
       ${field('Телефон', 'phone', s.phone)}${field('Email', 'email', s.email)}
       ${field('Telegram (номер або логін)', 'telegram', s.telegram)}${field('Viber (номер без +)', 'viber', s.viber)}
       ${field('Місто / регіон', 'city', s.city)}</div></div>
+    <div class="card"><h2>Соцмережі</h2><p class="hint">Вставте посилання на свої сторінки. У підвалі сайту з’явиться блок «Підписуйтесь на нас» зі значками. Порожні поля не показуються.</p><div class="grid2">
+      ${[['facebook', 'Facebook', 'https://facebook.com/…'], ['instagram', 'Instagram', 'https://instagram.com/…'], ['tiktok', 'TikTok', 'https://tiktok.com/@…'], ['telegram', 'Telegram-канал', 'https://t.me/…'], ['viber', 'Viber-спільнота', 'https://invite.viber.com/…'], ['youtube', 'YouTube', 'https://youtube.com/@…'], ['pinterest', 'Pinterest', 'https://pinterest.com/…'], ['threads', 'Threads', 'https://threads.net/@…']]
+        .map(([k, l, ph]) => field(l, 'social_' + k, s['social_' + k] || '', { ph, attrs: 'inputmode="url" autocomplete="off"' })).join('')}</div></div>
     <div class="card"><h2>Доставка і оплата</h2><p class="hint">Способи доставки й оплати в кошику, адреса самовивозу та безкоштовна доставка тепер у розділі <a href="#/checkout">Доставка й оплата</a>.</p></div>
     <div class="savebar"><button class="btn">Зберегти</button></div></form>
     <div class="card" style="margin-top:16px"><h2>Сповіщення в Telegram</h2><p class="hint">Надсилає тестове повідомлення на TELEGRAM_CHAT_ID і показує, що відповів Telegram.</p>
@@ -899,7 +902,7 @@
     <div class="card" style="margin-top:16px"><h2>Резервна копія</h2><p class="hint">Усі товари, категорії, сторінки та замовлення одним файлом JSON. Радимо завантажувати раз на тиждень.</p>
       <a class="btn ghost" href="/api/admin/export">Завантажити резервну копію</a></div>`;
     const form = $('#st'); watchDirty(form);
-    form.addEventListener('submit', async (e) => { e.preventDefault(); try { await api('PUT', 'settings', formData(form)); dirty = false; toast('Збережено'); } catch (ex) { fail(ex); } });
+    form.addEventListener('submit', async (e) => { e.preventDefault(); try { await api('PUT', 'settings', formData(form)); dirty = false; toast('Збережено'); settings(); } catch (ex) { fail(ex); } });
     $('#tgtest').addEventListener('click', async () => {
       const out = $('#tgres'); out.innerHTML = '<p class="muted">Надсилаємо…</p>';
       try {

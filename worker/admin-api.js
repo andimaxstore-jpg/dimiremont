@@ -23,7 +23,9 @@ const now = () => new Date().toISOString();
 const TR = { а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ь: '', ю: 'iu', я: 'ia', ы: 'y', э: 'e', ё: 'io', ъ: '' };
 export const slugify = (s) => String(s || '').toLowerCase().replace(/[’']/g, '').split('').map((c) => (c in TR ? TR[c] : c)).join('').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
 
-const SETTINGS_KEYS = ['site_url', 'shop_name', 'phone', 'telegram', 'viber', 'email', 'city', 'delivery', 'payment', 'pickup_address', 'pickup_hours', 'free_ship_from', 'colors'];
+// Посилання на соцмережі для підвалу сайту (порожні не показуються).
+const SOCIAL_KEYS = ['facebook', 'instagram', 'tiktok', 'telegram', 'viber', 'youtube', 'pinterest', 'threads'].map((k) => 'social_' + k);
+const SETTINGS_KEYS = ['site_url', 'shop_name', 'phone', 'telegram', 'viber', 'email', 'city', 'delivery', 'payment', 'pickup_address', 'pickup_hours', 'free_ship_from', 'colors', ...SOCIAL_KEYS];
 export const ORDER_STATUSES = ['new', 'confirmed', 'paid', 'shipped', 'done', 'cancelled'];
 
 export async function adminApi(request, env, url) {
@@ -266,6 +268,11 @@ async function putSettings(db, b) {
       for (const [n, c] of Object.entries(b.colors || {})) if (str(n) && /^#[0-9a-f]{3,8}$/i.test(c)) v[str(n, 60)] = c;
     } else v = str(v, 1000);
     if (k === 'site_url' && v && !/^https?:\/\//.test(v)) return bad('Адреса сайту має починатися з https://');
+    if (k.startsWith('social_') && v) {
+      if (!/^https?:\/\//i.test(v)) v = 'https://' + v.replace(/^\/+/, '');
+      v = v.replace(/^http:\/\//i, 'https://');
+      try { const u = new URL(v); if (!u.hostname.includes('.')) throw 0; v = u.toString(); } catch { return bad('Перевірте посилання на соцмережу: ' + v); }
+    }
     st.push(db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`).bind(k, JSON.stringify(v)));
   }
   if (st.length) await db.batch(st);

@@ -20,7 +20,7 @@ import * as R from './render.js';
 import cartTpl from './cart.html';
 import { accountApi, currentCustomer, rememberFromOrder, productsBySlugs, tooMany, attempt } from './account.js';
 import { processOrder } from './notify.js';
-import { trackView } from './visits.js';
+import { trackBeacon } from './visits.js';
 import { checkoutConfig, activeDelivery, paymentsFor, paymentTitle, CITY_KINDS, BRANCH_KINDS, ADDRESS_KINDS } from './checkout.js';
 
 const NP_URL = 'https://api.novaposhta.ua/v2.0/json/';
@@ -61,13 +61,7 @@ async function handle(request, env, ctx) {
       }
       if (url.pathname.startsWith('/api/')) return await api(request, env, ctx, url);
       if (url.pathname.startsWith('/media/') && env.DB) return await media(env, url);
-      if (env.DB && (request.method === 'GET' || request.method === 'HEAD')) {
-        const res = await storefront(request, env, url);
-        // Облік відвідувань (лише HTML-сторінки), у фоні — сторінка віддається одразу.
-        if ((res.headers.get('content-type') || '').startsWith('text/html'))
-          ctx.waitUntil(trackView(request, env, url, res.status).catch((e) => console.log('visit_error', e && e.message)));
-        return res;
-      }
+      if (env.DB && (request.method === 'GET' || request.method === 'HEAD')) return await storefront(request, env, url);
       return env.ASSETS.fetch(request);
     } catch (e) {
       console.log('server_error', e && e.stack || e);
@@ -80,6 +74,12 @@ async function api(request, env, ctx, url) {
   if (url.pathname === '/api/order' && request.method === 'POST') return await order(request, env, ctx);
   if (url.pathname === '/api/review' && request.method === 'POST') return await review(request, env);
   if (url.pathname.startsWith('/api/account/')) return await accountApi(request, env, url);
+  // Позначка відвідування від сторінки сайту (див. BEACON у render.js); запис у фоні.
+  if (url.pathname === '/api/v' && request.method === 'POST') {
+    const body = await request.text().catch(() => '');
+    if (env.DB) ctx.waitUntil(trackBeacon(request, env, url, body).catch((e) => console.log('visit_error', e && e.message)));
+    return new Response(null, { status: 204 });
+  }
   if (url.pathname === '/api/products' && env.DB) return await productsBySlugs(env, url);
   if (url.pathname === '/api/np/cities') return await cached(request, ctx, () => npCities(url, env));
   if (url.pathname === '/api/np/warehouses') return await cached(request, ctx, () => npWarehouses(url, env));
