@@ -266,7 +266,23 @@ pre{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);
 .stock:empty{display:none}
 .cat-desc{margin-top:28px}
 .page-content h2{margin:22px 0 8px}
-.page-content img{border-radius:var(--r)}
+.page-content img{border-radius:var(--r);max-width:100%;height:auto}
+.page-content h3{margin:18px 0 6px;font-size:1.05rem}
+.page-content h2[id],.page-content h3[id]{scroll-margin-top:90px}
+.page-content .lead{font-size:1.06rem}
+.page-content li{margin:4px 0}
+.page-content figure{margin:18px 0;text-align:center}
+.page-content figure img{width:100%;max-width:520px}
+.page-content figcaption{font-size:.88rem;color:var(--muted);margin-top:6px}
+.page-content table{width:100%;border-collapse:collapse;margin:12px 0;font-size:.93rem;background:var(--surface);border-radius:var(--r);overflow:hidden}
+.page-content th,.page-content td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+.page-content th{background:var(--bg)}
+.page-content .note{color:var(--fg);font-size:inherit;margin:14px 0;background:var(--surface);border-left:4px solid var(--accent);padding:10px 14px;border-radius:0 var(--r) var(--r) 0}
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 18px;margin:18px 0}
+.toc ol{margin:8px 0 0;padding-left:20px;columns:2 240px;column-gap:28px}
+.toc li{margin:3px 0;break-inside:avoid}
+.guide-link{margin:10px 0 0;font-weight:600}
+@media (max-width:560px){.page-content th,.page-content td{padding:6px 7px;font-size:.88rem}}
 .price-big .old{font-size:.55em;vertical-align:middle}
 
 /* відгуки */

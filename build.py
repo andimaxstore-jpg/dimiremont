@@ -164,6 +164,22 @@ def crumbs(rel, items):
         for i, (t, h) in enumerate(items)]}
     return f'<nav class="crumbs wrap" aria-label="Навігація"><ol>{li}</ol></nav>', ld
 
+# ---------- сторінка «Як працювати з самоклеючими товарами» ----------
+GUIDE = dict(
+    slug='yak-kleity-samokleiuchi-materialy',
+    title='Як працювати з самоклеючими товарами для ремонту',
+    seo_title='Як клеїти самоклеючі панелі, плитку, плівку та підлогу: інструкція з монтажу',
+    seo_desc='Покрокова інструкція: підготовка стін і побілки, монтаж 3D панелей, плитки, рейок, плівок і підлоги, ванна й кухня, розрахунок кількості, догляд та відповіді на запитання.',
+    in_menu=1, in_footer=1, sort=5,
+)
+
+
+def write_guide():
+    """data/guide_page.html -> data/guide_page.json (Worker разово додає сторінку в базу, далі її редагують в адмінці)."""
+    g = dict(GUIDE, content=open(os.path.join(ROOT, 'data/guide_page.html'), encoding='utf8').read().strip())
+    json.dump(g, open(os.path.join(ROOT, 'data/guide_page.json'), 'w', encoding='utf8'), ensure_ascii=False, indent=0)
+
+
 # ---------- сторінки ----------
 def build():
     if os.path.exists(OUT): shutil.rmtree(OUT)
@@ -180,6 +196,8 @@ def build():
             im = Image.open(os.path.join(ROOT, 'raw_img', f)).convert('RGB')
             im.thumbnail((720, 720))
             im.save(os.path.join(OUT, 'img', f[:-4] + '.webp'), quality=80, method=6)
+    shutil.copytree(os.path.join(ROOT, 'web/guide'), os.path.join(OUT, 'img/guide'))
+    write_guide()
     P = load()
     urls = [('index.html', '1.0'), ('katalog.html', '0.9'), ('dostavka.html', '0.3')]
     by_slug = {p['slug']: p for p in P}

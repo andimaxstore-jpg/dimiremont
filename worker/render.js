@@ -307,6 +307,7 @@ ${gift}
 </form>
 ${noPhoto}
 <ul class="feats">${feats}</ul>
+${guideLink(S, cat)}
 </div></section>
 <section class="wrap block about"><h2>Опис і характеристики</h2><div class="about-in"><div class="txt">${longDesc}</div><table class="specs">${specs}</table></div></section>
 ${reviewsHtml}
@@ -323,7 +324,7 @@ export function categoryPage(S, c) {
   const [cr, crld] = crumbs(S, [['Головна', '/'], [c.name, '']]);
   const panel = filterPanel(S, items, S.filtersByCat.get(c.id) || []);
   const site = String(S.settings.site_url || '').replace(/\/$/, '');
-  const body = `${cr}<section class="wrap block"><div class="cat-head">${group ? `<p class="eyebrow">${E(group.name)}</p>` : ''}<h1>${E(c.name)}</h1><p>${E(c.blurb)}</p><p class="muted">${items.length} товарів, ${items.reduce((s, p) => s + p.variants.length, 0)} артикулів</p></div>
+  const body = `${cr}<section class="wrap block"><div class="cat-head">${group ? `<p class="eyebrow">${E(group.name)}</p>` : ''}<h1>${E(c.name)}</h1><p>${E(c.blurb)}</p><p class="muted">${items.length} товарів, ${items.reduce((s, p) => s + p.variants.length, 0)} артикулів</p>${guideLink(S, c)}</div>
 <div class="listing${panel ? ' has-flt' : ''}">${panel ? `<button type="button" class="btn ghost flt-open" data-flt-open>Фільтри</button>` + panel : ''}
 <div class="listing-main">${sortTools}<div class="grid" data-catalog data-scope="category">${items.map(card).join('')}</div><p class="empty" data-empty hidden>Нічого не знайшли за цими фільтрами.</p></div></div>
 ${stripTags(c.description) ? `<div class="seo cat-desc">${c.description}</div>` : ''}</section>`;
@@ -397,12 +398,51 @@ ${stripTags(H.seo_text) ? `<section class="wrap block seo">${H.seo_heading ? `<h
   });
 }
 
+/** Сторінка-інструкція, де є розділ з id = slug категорії (напр. <h2 id="plytka">). */
+export function guideFor(S, cat) {
+  if (!cat) return null;
+  const pg = S.pages.find((p) => p.active && String(p.content || '').includes(`id="${cat.slug}"`));
+  return pg ? `/${pg.slug}.html#${cat.slug}` : null;
+}
+const guideLink = (S, cat) => { const u = guideFor(S, cat); return u ? `<p class="guide-link"><a href="${E(u)}">Як монтувати: покрокова інструкція →</a></p>` : ''; };
+
+/**
+ * Текстова сторінка з адмінки. Якщо в тексті 4+ заголовки H2 — додається зміст.
+ * Розділ із заголовком «Часті запитання» (H2), де питання — H3, а відповідь — текст під ним, стає розміткою FAQPage для Google.
+ */
 export function contentPage(S, pg) {
   const [cr, crld] = crumbs(S, [['Головна', '/'], [pg.title, '']]);
-  const body = `${cr}<section class="wrap block narrow page-content"><h1>${E(pg.title)}</h1>${pg.content || ''}</section>`;
+  const site = String(S.settings.site_url || '').replace(/\/$/, '');
+  let n = 0;
+  const toc = [];
+  const content = String(pg.content || '').replace(/<h2(\s[^>]*)?>([\s\S]*?)<\/h2>/gi, (m, attrs = '', inner) => {
+    const idm = /\sid="([^"]+)"/i.exec(attrs);
+    const id = idm ? idm[1] : `r${++n}`;
+    toc.push([id, stripTags(inner)]);
+    return idm ? m : `<h2 id="${id}"${attrs}>${inner}</h2>`;
+  });
+  const tocHtml = toc.length >= 4 ? `<nav class="toc" aria-label="Зміст"><b>Зміст</b><ol>${toc.map(([id, t]) => `<li><a href="#${E(id)}">${E(t)}</a></li>`).join('')}</ol></nav>` : '';
+  const first = content.search(/<h2[\s>]/i);
+  const html = tocHtml && first >= 0 ? content.slice(0, first) + tocHtml + content.slice(first) : tocHtml + content;
+  const ld = [crld];
+  const fm = /<h2[^>]*>[^<]*(?:запитан|питання|FAQ)[\s\S]*?<\/h2>([\s\S]*?)(?=<h2[\s>]|$)/i.exec(content);
+  if (fm) {
+    const qa = [...fm[1].matchAll(/<h3[^>]*>([\s\S]*?)<\/h3>([\s\S]*?)(?=<h3[\s>]|$)/gi)]
+      .map(([, q, a]) => [stripTags(q), stripTags(a)]).filter(([q, a]) => q && a);
+    if (qa.length >= 2) ld.push({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: qa.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) });
+  }
+  const desc = pg.seo_desc || stripTags(pg.content).slice(0, 160);
+  if (toc.length >= 4) {
+    const im = /<img[^>]+src="([^"]+)"/i.exec(content);
+    ld.push({ '@context': 'https://schema.org', '@type': 'Article', headline: pg.title, description: desc, inLanguage: 'uk',
+      mainEntityOfPage: `${site}/${pg.slug}.html`, ...(im ? { image: site + href(im[1]) } : {}),
+      author: { '@type': 'Organization', name: S.settings.shop_name }, publisher: { '@type': 'Organization', name: S.settings.shop_name } });
+  }
+  const body = `${cr}<section class="wrap block narrow page-content"><h1>${E(pg.title)}</h1>${html}</section>`;
+  const og = (/<img[^>]+src="([^"]+)"/i.exec(content) || [])[1] || '';
   return layout(S, {
     path: `${pg.slug}.html`, title: pg.seo_title || `${pg.title} | ${S.settings.shop_name}`,
-    desc: pg.seo_desc || stripTags(pg.content).slice(0, 160), body, ld: [crld],
+    desc, body, ld, ogImage: og,
   });
 }
 
