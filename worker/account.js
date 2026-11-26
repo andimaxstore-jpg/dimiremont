@@ -93,12 +93,12 @@ export function publicCustomer(c) {
 }
 
 // ---------- обмеження спроб ----------
-async function tooMany(db, key, limit, windowMs) {
+export async function tooMany(db, key, limit, windowMs) {
   const since = Date.now() - windowMs;
   const r = await db.prepare(`SELECT COUNT(*) AS n FROM login_attempts WHERE ip = ? AND ts > ?`).bind(key, since).first();
   return r && r.n >= limit;
 }
-const attempt = (db, key) => db.prepare(`INSERT INTO login_attempts (ip, ts) VALUES (?, ?)`).bind(key, Date.now()).run();
+export const attempt = (db, key) => db.prepare(`INSERT INTO login_attempts (ip, ts) VALUES (?, ?)`).bind(key, Date.now()).run();
 
 /** Доставка з форми замовлення -> що запам'ятати в профілі (для автозаповнення наступного разу). */
 export function deliveryForProfile(d, ref) {
@@ -189,10 +189,14 @@ async function login(env, b, ip) {
   if (await tooMany(db, 'c:' + ip, 10, 15 * 60e3)) return json({ error: 'too_many', message: 'Забагато спроб. Спробуйте за 15 хвилин.' }, 429);
   const id = String(b.login || '').trim();
   const phone = id.includes('@') ? '' : normPhone(id), email = id.includes('@') ? normEmail(id) : '';
+  // Окремий ліміт на один кабінет: підбір пароля з багатьох адрес теж зупиняється (20 невдалих спроб за годину).
+  const acct = 'a:' + (phone || email);
+  if ((phone || email) && await tooMany(db, acct, 20, 3600e3)) return json({ error: 'too_many', message: 'Забагато невдалих спроб входу в цей кабінет. Спробуйте за годину або зателефонуйте нам.' }, 429);
   const c = phone || email ? await db.prepare(`SELECT * FROM customers WHERE ${phone ? 'phone' : 'email'} = ?`).bind(phone || email).first() : null;
   const ok = c ? await checkPassword(String(b.password || ''), c.pass_hash) : (await hashPassword('x'), false);
   if (!ok) {
     await attempt(db, 'c:' + ip);
+    if (phone || email) await attempt(db, acct);
     return json({ error: 'bad_login', message: 'Невірний телефон/email або пароль' }, 401);
   }
   await db.prepare(`UPDATE customers SET last_login = ? WHERE id = ?`).bind(now(), c.id).run();

@@ -204,6 +204,7 @@ def build():
     shutil.copy(os.path.join(ROOT, 'web/account.js'), os.path.join(OUT, 'assets/account.js'))
     shutil.copy(os.path.join(ROOT, 'web/favicon.svg'), os.path.join(OUT, 'assets/favicon.svg'))
     shutil.copytree(os.path.join(ROOT, 'web/admin'), os.path.join(OUT, 'admin'))
+    shutil.copy(os.path.join(ROOT, 'web/_headers'), os.path.join(OUT, '_headers'))
     for f in os.listdir(os.path.join(ROOT, 'web/ph')):
         shutil.copy(os.path.join(ROOT, 'web/ph', f), os.path.join(OUT, 'img', f))
     for f in os.listdir(os.path.join(ROOT, 'raw_img')):

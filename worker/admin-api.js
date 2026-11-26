@@ -236,7 +236,9 @@ async function putNotify(env, db, b) {
 async function ordersCsv(db, url) {
   const [where, a] = orderWhere(url);
   const rows = (await db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC LIMIT 5000`).bind(...a).all()).results.map(orderRow);
-  const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  // Клітинка, що починається з =, @, + або - (не телефон/число), в Excel могла б стати формулою — додаємо апостроф.
+  const safe = (t) => (/^[=@\t\r]/.test(t) || (/^[+-]/.test(t) && !/^[+-]?[\d\s().]+$/.test(t)) ? "'" + t : t);
+  const q = (v) => '"' + safe(String(v == null ? '' : v)).replace(/"/g, '""') + '"';
   const head = ['Номер', 'Дата', 'Статус', 'Клієнт', 'Телефон', 'Email', 'Доставка', 'Місто', 'Відділення/адреса', 'Оплата', 'Сума', 'ТТН', 'Товари', 'Коментар', 'Нотатка'];
   const lines = rows.map((o) => [o.id, o.created_at.slice(0, 16).replace('T', ' '), o.status, o.name, o.phone, o.email, o.delivery.method, o.delivery.city,
     o.delivery.branch || o.delivery.address || o.delivery.pickupAddress, o.payment, o.total, o.ttn,
