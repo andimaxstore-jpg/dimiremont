@@ -172,15 +172,20 @@
     // --- телефон: маска +380 XX XXX XX XX
     var phone = document.getElementById('o-phone');
     function normPhone(v) {
-      var d = v.replace(/\D/g, '');
-      while (d.length > 9 && d.indexOf('380') === 0) d = d.slice(3); // +380 вже є в полі, а людина вводить номер ще раз з +380
+      // У полі завжди стоїть +380, тож відкидаємо цей префікс (навіть недописаний, напр. «+38» після стирання),
+      // а далі приймаємо номер у будь-якому вигляді: 050…, 380…, +380…
+      var s = String(v || '').trim();
+      if (s.charAt(0) === '+') s = s.slice(1).replace(/^3?8?0?/, '');
+      var d = s.replace(/\D/g, '');
+      while (d.length > 9 && d.indexOf('380') === 0) d = d.slice(3);
       if (d.length > 9 && d.indexOf('80') === 0) d = d.slice(2);
       if (d.indexOf('0') === 0) d = d.slice(1);
       return d.slice(0, 9);
     }
     phone.addEventListener('focus', function () { if (!phone.value) phone.value = '+380 '; });
-    phone.addEventListener('input', function () {
+    phone.addEventListener('input', function (e) {
       var d = normPhone(phone.value), out = '+380';
+      if (!d && e && /^delete/.test(e.inputType || '')) { phone.value = ''; return; } // дозволяємо стерти поле повністю
       if (d.length) out += ' ' + d.slice(0, 2);
       if (d.length > 2) out += ' ' + d.slice(2, 5);
       if (d.length > 5) out += ' ' + d.slice(5, 7);

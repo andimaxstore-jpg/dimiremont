@@ -23,8 +23,12 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
   function normPhone(v) {
-    var d = String(v || '').replace(/\D/g, '');
-    while (d.length > 9 && d.indexOf('380') === 0) d = d.slice(3); // +380 вже є в полі, а людина вводить номер ще раз з +380
+    // У полі завжди стоїть +380, тож відкидаємо цей префікс (навіть недописаний, напр. «+38» після стирання),
+    // а далі приймаємо номер у будь-якому вигляді: 050…, 380…, +380…
+    var s = String(v || '').trim();
+    if (s.charAt(0) === '+') s = s.slice(1).replace(/^3?8?0?/, '');
+    var d = s.replace(/\D/g, '');
+    while (d.length > 9 && d.indexOf('380') === 0) d = d.slice(3);
     if (d.length > 9 && d.indexOf('80') === 0) d = d.slice(2);
     if (d.indexOf('0') === 0) d = d.slice(1);
     return d.slice(0, 9);
@@ -33,7 +37,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // either: поле «телефон або email» — без автопідстановки +380, щоб не заважати вводити email
     if (!either) input.addEventListener('focus', function () { if (!input.value) input.value = '+380 '; });
     input.addEventListener('blur', function () { if (!either && !normPhone(input.value)) input.value = ''; });
-    input.addEventListener('input', function () {
+    input.addEventListener('input', function (e) {
       var raw = input.value;
       if (raw.indexOf('@') >= 0 || /[a-zа-яіїєґ_]/i.test(raw)) { // це email, не чіпаємо
         if (/^\+380\s*/.test(raw)) input.value = raw.replace(/^\+380\s*/, '');
@@ -41,6 +45,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       if (either) return; // телефон нормалізуємо під час входу
       var d = normPhone(raw), out = '+380';
+      if (!d && e && /^delete/.test(e.inputType || '')) { input.value = ''; return; } // дозволяємо стерти поле повністю
       if (d.length) out += ' ' + d.slice(0, 2);
       if (d.length > 2) out += ' ' + d.slice(2, 5);
       if (d.length > 5) out += ' ' + d.slice(5, 7);
