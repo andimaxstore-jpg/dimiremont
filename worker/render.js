@@ -236,9 +236,11 @@ export function productPage(S, p) {
   const freeFrom = +S.settings.free_ship_from || 0;
   const shipFor = (v) => (freeFrom && +v.price >= freeFrom
     ? { ...shipping, shippingRate: { '@type': 'MonetaryAmount', value: '0', currency: 'UAH' } } : shipping);
+  const retUrl = returnsUrl(S);
   const returns = {
     '@type': 'MerchantReturnPolicy', applicableCountry: 'UA', returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
     merchantReturnDays: 14, returnMethod: 'https://schema.org/ReturnByMail', returnFees: 'https://schema.org/ReturnFeesCustomerResponsibility',
+    ...(retUrl ? { merchantReturnLink: site + retUrl } : {}),
   };
   const offer = (v) => ({
     '@type': 'Offer', price: String(+v.price), priceCurrency: 'UAH', itemCondition: 'https://schema.org/NewCondition',
@@ -298,7 +300,7 @@ export function productPage(S, p) {
 ${p.reviewCount ? `<a class="rate-line" href="#vidguky">${starsHtml(p.rating)} ${String(p.rating).replace('.', ',')} · ${p.reviewCount} ${plural(p.reviewCount, 'відгук', 'відгуки', 'відгуків')}</a>` : ''}
 <div class="sku-line">Артикул: <span data-sku>${E(v0.sku)}</span><span data-vsize></span></div>
 ${gift}
-<div class="buy"><div class="price-big"><s class="old" data-old${oldTxt ? '' : ' hidden'}>${oldTxt}</s> <span data-price>${money(v0.price)} ₴</span></div>${note}<p class="stock" data-stock></p>${freeFrom ? `<p class="ship-note">Доставка за тарифами перевізника, <b>безкоштовно від ${money(freeFrom)} ₴</b></p>` : ''}</div>
+<div class="buy"><div class="price-big"><s class="old" data-old${oldTxt ? '' : ' hidden'}>${oldTxt}</s> <span data-price>${money(v0.price)} ₴</span></div>${note}<p class="stock" data-stock></p>${freeFrom ? `<p class="ship-note">Доставка за тарифами перевізника, <b>безкоштовно від ${money(freeFrom)} ₴</b></p>` : ''}${retUrl ? `<p class="ship-note"><a href="${E(retUrl)}">Повернення та обмін — 14 днів, гарантія</a></p>` : ''}</div>
 <form class="variant-form" onsubmit="return false">${selectors}
 <div class="buy-row"><div class="qty"><button type="button" data-qty="-1" aria-label="Менше">−</button><input id="qty" type="number" min="1" value="1" inputmode="numeric" aria-label="Кількість"><button type="button" data-qty="1" aria-label="Більше">+</button></div>
 <button type="button" class="btn" data-add>Додати в кошик</button>
@@ -398,6 +400,13 @@ ${stripTags(H.seo_text) ? `<section class="wrap block seo">${H.seo_heading ? `<h
   });
 }
 
+/** Активна сторінка умов повернення (за адресою garantiia-ta-povernennia або за назвою зі словом «повернення»). */
+export function returnsUrl(S) {
+  const pg = S.pages.find((p) => p.active && p.slug === 'garantiia-ta-povernennia')
+    || S.pages.find((p) => p.active && p.slug !== 'dostavka' && /поверненн/i.test(p.title));
+  return pg ? `/${pg.slug}.html` : null;
+}
+
 /** Сторінка-інструкція, де є розділ з id = slug категорії (напр. <h2 id="plytka">). */
 export function guideFor(S, cat) {
   if (!cat) return null;
@@ -462,7 +471,8 @@ export function cartPage(S, tpl) {
     .replaceAll('{{PICKUP_ADDRESS}}', E(st.pickup_address))
     .replaceAll('{{PICKUP_HOURS}}', E(st.pickup_hours))
     .replaceAll('{{PHONE}}', E(st.phone))
-    .replace('{{TG}}', tg).replace('{{VB}}', vb);
+    .replace('{{TG}}', tg).replace('{{VB}}', vb)
+    .replace('{{RETURNS}}', returnsUrl(S) ? ` Умови <a href="${E(returnsUrl(S))}">повернення та гарантії</a>.` : '');
   return layout(S, { path: 'koshyk.html', title: `Оформлення замовлення | ${st.shop_name}`, desc: 'Кошик і оформлення замовлення.', body, robots: 'noindex,follow' });
 }
 

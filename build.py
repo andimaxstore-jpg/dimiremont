@@ -174,10 +174,25 @@ GUIDE = dict(
 )
 
 
+# ---------- сторінка «Гарантія та повернення» ----------
+RETURNS = dict(
+    slug='garantiia-ta-povernennia',
+    title='Гарантія та повернення',
+    seo_title='Гарантія, повернення та обмін товару: умови, строки, повернення коштів',
+    seo_desc='Як перевірити посилку на Новій пошті, повернення та обмін протягом 14 днів, що не підлягає поверненню, дії при браку, повернення коштів і умови гарантії.',
+    in_menu=1, in_footer=1, sort=2,
+)
+
+
+def write_page(meta, name):
+    """data/<name>.html -> data/<name>.json (Worker разово додає сторінку в базу, далі її редагують в адмінці)."""
+    g = dict(meta, content=open(os.path.join(ROOT, f'data/{name}.html'), encoding='utf8').read().strip())
+    json.dump(g, open(os.path.join(ROOT, f'data/{name}.json'), 'w', encoding='utf8'), ensure_ascii=False, indent=0)
+
+
 def write_guide():
-    """data/guide_page.html -> data/guide_page.json (Worker разово додає сторінку в базу, далі її редагують в адмінці)."""
-    g = dict(GUIDE, content=open(os.path.join(ROOT, 'data/guide_page.html'), encoding='utf8').read().strip())
-    json.dump(g, open(os.path.join(ROOT, 'data/guide_page.json'), 'w', encoding='utf8'), ensure_ascii=False, indent=0)
+    write_page(GUIDE, 'guide_page')
+    write_page(RETURNS, 'returns_page')
 
 
 # ---------- сторінки ----------
