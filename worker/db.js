@@ -89,6 +89,15 @@ async function applyPatches(db) {
   await patchRemontFirst(db);
   await patchGuide(db);
   await patchReturns(db);
+  // Адреса самовивозу порожня -> у кошику було «, безкоштовно». Ставимо адресу з налаштувань за замовчуванням.
+  if (!(await patchDone(db, 'patch_pickup_v1'))) {
+    const r = await db.prepare(`SELECT value FROM settings WHERE key='pickup_address'`).first();
+    let v = ''; try { v = r ? JSON.parse(r.value) : ''; } catch { v = ''; }
+    const st = [patchMark(db, 'patch_pickup_v1')];
+    if (!String(v || '').trim()) st.unshift(db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('pickup_address', ?)`).bind(JSON.stringify(seed.settings.pickup_address)));
+    await db.batch(st);
+    await bumpVersion(db);
+  }
   if (!(await patchDone(db, 'patch_free_ship_v1')))
     await db.batch([db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('free_ship_from', ?)`).bind(JSON.stringify('5000')), patchMark(db, 'patch_free_ship_v1')]);
 }

@@ -58,7 +58,7 @@
     [/^\/products$/, products], [/^\/products\/(new|\d+)$/, productEdit],
     [/^\/categories$/, categories], [/^\/categories\/(new|\d+)$/, categoryEdit],
     [/^\/attributes$/, attributes], [/^\/pages$/, pages], [/^\/pages\/home$/, homeEdit], [/^\/pages\/(new|\d+)$/, pageEdit],
-    [/^\/settings$/, settings], [/^\/reviews$/, reviews], [/^\/customers$/, customers], [/^\/customers\/(\d+)$/, customerView],
+    [/^\/settings$/, settings], [/^\/checkout$/, checkoutEdit], [/^\/reviews$/, reviews], [/^\/customers$/, customers], [/^\/customers\/(\d+)$/, customerView],
   ];
   let lastHash = location.hash;
   async function route() {
@@ -88,7 +88,17 @@
     try { await api('GET', 'me'); } catch (e) { return; }
     $('#app').hidden = false; $('#login').hidden = true;
     refreshBadge();
+    await loadNames();
     route();
+  }
+
+  // Назви способів доставки/оплати — з розділу «Доставка й оплата» (для замовлень і клієнтів).
+  async function loadNames() {
+    try {
+      const c = await api('GET', 'checkout');
+      c.delivery.forEach((d) => { DELIV[d.id] = d.title; });
+      c.payment.forEach((p) => { PAY[p.id] = p.title; });
+    } catch (e) { /* лишаються вбудовані назви */ }
   }
 
   // ---------- кешовані довідники ----------
@@ -330,7 +340,7 @@
     <button class="btn ghost">Знайти</button></form>
     ${d.items.length ? `<div class="tbl-wrap"><table class="tbl"><tr><th>№</th><th>Дата</th><th>Клієнт</th><th>Телефон</th><th>Доставка</th><th class="num">Товарів</th><th class="num">Сума</th><th>Статус</th></tr>
     ${d.items.map((o) => `<tr class="click" data-href="#/orders/${esc(o.id)}"><td>${esc(o.id)}</td><td>${fmtDate(o.created_at)}</td><td>${esc(o.name)}${o.customer_id ? ' <span title="Має особистий кабінет">👤</span>' : ''}</td><td>${esc(o.phone)}</td>
-      <td>${esc(DELIV[o.delivery.method] || '')}${o.delivery.city ? ', ' + esc(o.delivery.city.split(',')[0]) : ''}${o.ttn ? `<br><small class="muted">ТТН ${esc(o.ttn)}</small>` : ''}</td>
+      <td>${esc(o.delivery.title || DELIV[o.delivery.method] || '')}${o.delivery.city ? ', ' + esc(o.delivery.city.split(',')[0]) : ''}${o.ttn ? `<br><small class="muted">ТТН ${esc(o.ttn)}</small>` : ''}</td>
       <td class="num">${o.count}</td><td class="num">${money(o.total)}</td><td>${pill(o.status)}</td></tr>`).join('')}</table></div>` : '<div class="card empty">Замовлень не знайдено</div>'}
     ${pages > 1 ? `<div class="toolbar" style="margin-top:12px">${Array.from({ length: pages }, (_, i) => `<button type="button" class="btn ${i + 1 === d.page ? '' : 'ghost'} sm" data-page="${i + 1}">${i + 1}</button>`).join('')}</div>` : ''}`;
     $$('[data-st]').forEach((b) => b.addEventListener('click', () => setQ('status', b.dataset.st)));
@@ -356,10 +366,10 @@
       <div class="toolbar" style="margin-top:10px"><button type="button" class="btn ghost sm" data-add>+ Додати позицію</button><span class="grow"></span><b>Разом: <span id="total">${money(o.total)}</span></b></div></div>
       <div class="card"><h2>Покупець і доставка</h2><div class="grid2">
         ${field('Ім’я та прізвище', 'name', o.name)}${field('Телефон', 'phone', o.phone)}${field('Email', 'email', o.email)}
-        ${field('Спосіб доставки', 'd_method', d.method, { type: 'select', options: Object.entries(DELIV) })}
+        ${field('Спосіб доставки', 'd_method', d.method, { type: 'select', options: Object.entries(DELIV[d.method] || !d.method ? DELIV : { ...DELIV, [d.method]: d.title || d.method }) })}
         ${field('Місто', 'd_city', d.city)}${field('Відділення', 'd_branch', d.branch)}${field('Адреса (кур’єр)', 'd_address', d.address)}
       </div>
-      <dl class="dl" style="margin-top:12px"><dt>Оплата</dt><dd>${esc(PAY[o.payment] || o.payment)}</dd>
+      <dl class="dl" style="margin-top:12px"><dt>Оплата</dt><dd>${esc(d.paymentTitle || PAY[o.payment] || o.payment)}</dd>
       <dt>Дзвінок</dt><dd>${o.call_me ? 'Подзвонити для підтвердження' : 'Просить не дзвонити, якщо все в наявності'}</dd>
       ${o.comment ? `<dt>Коментар</dt><dd>${esc(o.comment)}</dd>` : ''}
       <dt>Кабінет</dt><dd>${o.customer_id ? `<a href="#/customers/${o.customer_id}">Відкрити профіль клієнта</a>` : 'Оформлено без кабінету'}</dd>
@@ -394,7 +404,7 @@
       try {
         await api('PATCH', 'orders/' + encodeURIComponent(id), {
           status: f.status, ttn: f.ttn, admin_note: f.admin_note, name: f.name, phone: f.phone, email: f.email, items,
-          delivery: { method: f.d_method, city: f.d_city, branch: f.d_branch, address: f.d_address },
+          delivery: { method: f.d_method, title: f.d_method === d.method && d.title ? d.title : (DELIV[f.d_method] || f.d_method), city: f.d_city, branch: f.d_branch, address: f.d_address },
         });
         dirty = false; toast('Збережено'); refreshBadge(); orderEdit(id);
       } catch (ex) { fail(ex); }
@@ -780,9 +790,7 @@
       ${field('Телефон', 'phone', s.phone)}${field('Email', 'email', s.email)}
       ${field('Telegram (номер або логін)', 'telegram', s.telegram)}${field('Viber (номер без +)', 'viber', s.viber)}
       ${field('Місто / регіон', 'city', s.city)}</div></div>
-    <div class="card"><h2>Доставка і оплата</h2><div class="grid2">
-      ${field('Доставка (коротко)', 'delivery', s.delivery, { span: true })}${field('Оплата (коротко)', 'payment', s.payment, { span: true })}
-      ${field('Безкоштовна доставка від, ₴', 'free_ship_from', s.free_ship_from, { hint: 'порожньо — без безкоштовної доставки' })}${field('Адреса самовивозу', 'pickup_address', s.pickup_address)}${field('Час видачі', 'pickup_hours', s.pickup_hours)}</div></div>
+    <div class="card"><h2>Доставка і оплата</h2><p class="hint">Способи доставки й оплати в кошику, адреса самовивозу та безкоштовна доставка тепер у розділі <a href="#/checkout">Доставка й оплата</a>.</p></div>
     <div class="savebar"><button class="btn">Зберегти</button></div></form>
     <div class="card" style="margin-top:16px"><h2>Сповіщення в Telegram</h2><p class="hint">Надсилає тестове повідомлення на TELEGRAM_CHAT_ID і показує, що відповів Telegram.</p>
       <button type="button" class="btn ghost" id="tgtest">Надіслати тестове повідомлення</button><div id="tgres" style="margin-top:10px"></div></div>
@@ -799,6 +807,95 @@
           : `<p class="err">✗ ${x.chat ? 'Чат ' + esc(x.chat) + ': ' : ''}${esc(x.error)}</p>`).join('') +
           (r.ok ? '' : '<p class="hint">«chat not found» — неправильний TELEGRAM_CHAT_ID або ви ще не натиснули Start у бота. «bot was blocked» — розблокуйте бота. «Unauthorized» — неправильний токен.</p>');
       } catch (ex) { out.innerHTML = `<p class="err">${esc(ex.message)}</p>`; }
+    });
+  }
+
+  // =====================================================================
+  // Доставка й оплата (кошик)
+  const KIND = { np: 'Нова пошта: місто + відділення або поштомат', np_courier: 'Нова пошта: місто + адреса', up: 'Укрпошта: місто + відділення', pickup: 'Самовивіз: адреса магазину',
+    address: 'Покупець вказує місто й адресу', none: 'Без адреси (лише ваш текст)' };
+  const BUILTIN = ['np', 'np_courier', 'up', 'pickup', 'cod', 'card', 'cash'];
+  async function checkoutEdit() {
+    const c = await api('GET', 'checkout');
+    view.innerHTML = '';
+    const root = document.createElement('div'); view.append(root);
+    let dl = c.delivery.map((x) => ({ ...x })), pl = c.payment.map((x) => ({ ...x })), tx = { ...c.text };
+    const newId = (p) => p + Date.now().toString(36).slice(-6);
+    const tools = (kind, i, n, id) => `<span class="grow"></span>
+      <button type="button" class="icon" data-mv="${kind}:${i}:-1" title="Вище" ${i ? '' : 'disabled'}>↑</button><button type="button" class="icon" data-mv="${kind}:${i}:1" title="Нижче" ${i < n - 1 ? '' : 'disabled'}>↓</button>
+      ${BUILTIN.includes(id) ? '' : `<button type="button" class="icon" data-rm="${kind}:${i}" title="Видалити">×</button>`}`;
+    const dCard = (d, i) => `<div class="card co-item${d.active ? '' : ' off'}" data-d="${i}">
+      <div class="toolbar" style="margin-bottom:8px"><label class="check"><input type="checkbox" data-k="active" ${d.active ? 'checked' : ''}> <b>${esc(d.title || 'Новий спосіб')}</b></label>
+      <span class="pill">${d.active ? 'Увімкнено' : 'Вимкнено'}</span>${tools('d', i, dl.length, d.id)}</div>
+      <div class="grid2">
+        <label>Назва<input data-k="title" value="${esc(d.title)}"></label>
+        <label>Підпис під назвою<small>${d.kind === 'pickup' ? 'порожньо — адреса самовивозу, «безкоштовно»' : 'короткий, в один рядок'}</small><input data-k="subtitle" value="${esc(d.subtitle)}"></label>
+        <label class="span2">Інформація, коли обрано<small>Показується покупцю під способами доставки. Порожній рядок — новий абзац.</small><textarea data-k="info" rows="2">${esc(d.info)}</textarea></label>
+        ${d.kind === 'pickup' ? `<label>Адреса самовивозу<input data-t="pickup_address" value="${esc(tx.pickup_address)}" placeholder="м. Вишневе, вул. Молодіжна, 1"></label>
+        <label>Час видачі<input data-t="pickup_hours" value="${esc(tx.pickup_hours)}"></label>` : ''}
+        <label>Вартість у кошику<small>${d.free ? 'покупець бачить «безкоштовно»' : 'напр. «за тарифами перевізника» або «150 ₴»'}</small><input data-k="cost_note" value="${esc(d.cost_note)}" ${d.free ? 'disabled' : ''}></label>
+        <div class="rows" style="align-self:end">
+          <label class="check"><input type="checkbox" data-k="free" ${d.free ? 'checked' : ''}> Завжди безкоштовно</label>
+          <label class="check"><input type="checkbox" data-k="threshold" ${d.threshold && !d.free ? 'checked' : ''} ${d.free ? 'disabled' : ''}> Діє «Безкоштовна доставка від…»</label></div>
+        ${BUILTIN.includes(d.id) ? `<p class="hint span2">Поля для покупця: ${esc(KIND[d.kind])}</p>`
+          : `<label class="span2">Що просити в покупця<select data-k="kind">${['address', 'none'].map((k) => `<option value="${k}" ${d.kind === k ? 'selected' : ''}>${esc(KIND[k])}</option>`).join('')}</select></label>`}
+      </div></div>`;
+    const pCard = (p, i) => `<div class="card co-item${p.active ? '' : ' off'}" data-p="${i}">
+      <div class="toolbar" style="margin-bottom:8px"><label class="check"><input type="checkbox" data-k="active" ${p.active ? 'checked' : ''}> <b>${esc(p.title || 'Новий спосіб')}</b></label>
+      <span class="pill">${p.active ? 'Увімкнено' : 'Вимкнено'}</span>${tools('p', i, pl.length, p.id)}</div>
+      <div class="grid2">
+        <label>Назва<input data-k="title" value="${esc(p.title)}"></label>
+        <label>Підпис під назвою<input data-k="subtitle" value="${esc(p.subtitle)}"></label>
+        <label class="span2">Інформація, коли обрано<small>Напр. реквізити або умови передоплати. Порожній рядок — новий абзац.</small><textarea data-k="info" rows="2">${esc(p.info)}</textarea></label>
+        <div class="span2"><span class="hint">Доступно для доставки:</span><div class="checks" style="margin-top:4px">${dl.map((d) => `<label class="check"><input type="checkbox" data-for="${esc(d.id)}" ${!(p.for || []).length || p.for.includes(d.id) ? 'checked' : ''}> ${esc(d.title)}</label>`).join('')}</div></div>
+      </div></div>`;
+    function read() {
+      $$('[data-d]', root).forEach((el) => { const d = dl[+el.dataset.d]; $$('[data-k]', el).forEach((x) => { d[x.dataset.k] = x.type === 'checkbox' ? x.checked : x.value; }); });
+      $$('[data-p]', root).forEach((el) => { const p = pl[+el.dataset.p]; $$('[data-k]', el).forEach((x) => { p[x.dataset.k] = x.type === 'checkbox' ? x.checked : x.value; });
+        const all = $$('[data-for]', el); const on = all.filter((x) => x.checked).map((x) => x.dataset.for); p.for = on.length === all.length ? [] : on; });
+      $$('[data-t]', root).forEach((x) => { tx[x.dataset.t] = x.value; });
+    }
+    function draw() {
+      root.innerHTML = `<div class="head"><h1>Доставка й оплата</h1><a class="btn ghost sm" href="/koshyk.html" target="_blank" rel="noopener">Відкрити кошик ↗</a></div>
+      <p class="hint" style="margin:-8px 0 16px">Що бачить покупець у кошику. Вимкнений спосіб зникає з сайту, але старі замовлення з ним лишаються.</p>
+      <div class="card"><div class="grid2">
+        <label>Безкоштовна доставка від, ₴<small>порожньо — без безкоштовної доставки. Діє для способів з позначкою нижче.</small><input data-t="free_ship_from" inputmode="numeric" value="${esc(tx.free_ship_from)}"></label>
+        <span></span>
+        <label>Доставка (коротко)<small>у підвалі сайту й на сторінці товару</small><input data-t="delivery" value="${esc(tx.delivery)}"></label>
+        <label>Оплата (коротко)<small>на сторінці товару</small><input data-t="payment" value="${esc(tx.payment)}"></label></div></div>
+      <h2 style="margin:20px 0 10px">Способи доставки</h2>${dl.map(dCard).join('')}
+      <button type="button" class="btn ghost" data-add="d">+ Додати спосіб доставки</button>
+      <h2 style="margin:24px 0 10px">Способи оплати</h2>${pl.map(pCard).join('')}
+      <button type="button" class="btn ghost" data-add="p">+ Додати спосіб оплати</button>
+      <div class="savebar" style="margin-top:20px"><button type="button" class="btn" data-save>Зберегти</button><span class="hint">Зміни з’являться в кошику одразу після збереження.</span></div>`;
+    }
+    draw();
+    root.addEventListener('input', () => { dirty = true; });
+    root.addEventListener('change', (e) => {
+      dirty = true;
+      const k = e.target.dataset && e.target.dataset.k;
+      if (k === 'active' || k === 'free' || k === 'kind') { read(); draw(); }
+    });
+    root.addEventListener('click', async (e) => {
+      const mv = e.target.closest('[data-mv]'), rm = e.target.closest('[data-rm]'), add = e.target.closest('[data-add]');
+      if (mv || rm || add) {
+        read();
+        if (mv) { const [k, i, s] = mv.dataset.mv.split(':'); const a = k === 'd' ? dl : pl, j = +i + +s; [a[+i], a[j]] = [a[j], a[+i]]; }
+        if (rm) { const [k, i] = rm.dataset.rm.split(':'); const a = k === 'd' ? dl : pl; if (!confirm(`Видалити «${a[+i].title}»?`)) return; a.splice(+i, 1); }
+        if (add && add.dataset.add === 'd') dl.push({ id: newId('d_'), kind: 'address', active: true, title: '', subtitle: '', info: '', cost_note: 'за тарифами перевізника', free: false, threshold: false });
+        if (add && add.dataset.add === 'p') pl.push({ id: newId('p_'), active: true, title: '', subtitle: '', info: '', for: [] });
+        dirty = true; draw();
+        if (add) { const last = $$(add.dataset.add === 'd' ? '[data-d]' : '[data-p]', root).pop(); last.scrollIntoView({ block: 'center' }); $('[data-k=title]', last).focus(); }
+        return;
+      }
+      if (e.target.closest('[data-save]')) {
+        read();
+        try {
+          const r = await api('PUT', 'checkout', { delivery: dl, payment: pl, text: tx });
+          dl = r.delivery; pl = r.payment; tx = r.text; dirty = false; draw(); toast('Збережено');
+          r.delivery.forEach((d) => { DELIV[d.id] = d.title; }); r.payment.forEach((p) => { PAY[p.id] = p.title; });
+        } catch (ex) { fail(ex); }
+      }
     });
   }
 

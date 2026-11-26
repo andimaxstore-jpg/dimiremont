@@ -216,6 +216,8 @@ pre{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);
 .ac li.info{color:var(--muted);cursor:default}
 .pickup{padding:12px 14px;border-radius:8px;background:var(--bg)}
 .pickup p{margin:4px 0 0;color:var(--muted)}
+.co-info{padding:10px 14px;border-radius:8px;background:var(--bg);margin-top:10px;color:var(--muted)}
+.co-info p{margin:0 0 6px}.co-info p:last-child{margin:0}
 .check{display:flex;gap:8px;align-items:center;font-size:.9rem}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 .co-sum{position:sticky;top:140px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:10px;min-width:0}

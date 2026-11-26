@@ -4,6 +4,7 @@
 import { isAuthed, login, logoutCookie } from './auth.js';
 import { bumpVersion } from './db.js';
 import { hashPassword, normPhone, normEmail, publicCustomer, customerOrder } from './account.js';
+import { checkoutConfig, cleanCheckout } from './checkout.js';
 
 const json = (data, status = 200, extra = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extra } });
@@ -54,6 +55,10 @@ export async function adminApi(request, env, url) {
     case 'settings':
       if (m === 'GET') return getSettings(db);
       if (m === 'PUT') return write(() => putSettings(db, body));
+      break;
+    case 'checkout':
+      if (m === 'GET') return getCheckout(db);
+      if (m === 'PUT') return write(() => putCheckout(db, body));
       break;
     case 'home':
       if (m === 'GET') return json(parse((await db.prepare(`SELECT value FROM settings WHERE key='home'`).first() || {}).value, {}));
@@ -226,6 +231,29 @@ async function putSettings(db, b) {
   }
   if (st.length) await db.batch(st);
   return getSettings(db);
+}
+
+// ---------- доставка й оплата в кошику ----------
+const CHECKOUT_TEXT = ['free_ship_from', 'pickup_address', 'pickup_hours', 'delivery', 'payment'];
+async function getCheckout(db) {
+  const rows = (await db.prepare(`SELECT key, value FROM settings`).all()).results;
+  const st = {};
+  for (const r of rows) st[r.key] = parse(r.value, r.value);
+  const cfg = checkoutConfig(st, true);
+  return json({ delivery: cfg.delivery, payment: cfg.payment, text: Object.fromEntries(CHECKOUT_TEXT.map((k) => [k, st[k] == null ? '' : st[k]])) });
+}
+
+async function putCheckout(db, b) {
+  let cfg;
+  try { cfg = cleanCheckout(b); } catch (e) { return bad(e.message); }
+  const t = b.text || {};
+  const free = str(t.free_ship_from, 20).replace(/\s/g, '');
+  if (free && !/^\d+$/.test(free)) return bad('Поріг безкоштовної доставки — ціле число гривень');
+  const st = [db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('checkout', ?)`).bind(JSON.stringify(cfg))];
+  for (const k of CHECKOUT_TEXT) if (t[k] !== undefined)
+    st.push(db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`).bind(k, JSON.stringify(k === 'free_ship_from' ? free : str(t[k], 1000))));
+  await db.batch(st);
+  return getCheckout(db);
 }
 
 function cleanHome(b) {

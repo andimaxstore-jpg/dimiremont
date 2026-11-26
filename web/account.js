@@ -10,6 +10,14 @@ document.addEventListener('DOMContentLoaded', function () {
   var STEPS = ['new', 'confirmed', 'shipped', 'done'];
   var DELIV = { np: 'Нова пошта, відділення', np_courier: 'Кур’єр Нової пошти', up: 'Укрпошта', pickup: 'Самовивіз' };
   var PAY = { cod: 'Накладений платіж', card: 'На рахунок або картку', cash: 'Готівкою або карткою при самовивозі' };
+  var ON = ['np', 'np_courier', 'up', 'pickup'];
+  // Назви з адмінки («Доставка й оплата»)
+  try {
+    var cc = JSON.parse(page.getAttribute('data-checkout') || '{}');
+    Object.keys(cc.d || {}).forEach(function (k) { DELIV[k] = cc.d[k]; });
+    Object.keys(cc.p || {}).forEach(function (k) { PAY[k] = cc.p[k]; });
+    if (cc.on && cc.on.length) ON = cc.on;
+  } catch (e) {}
   var me = null;
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -169,9 +177,9 @@ document.addEventListener('DOMContentLoaded', function () {
           '<div class="ord-top"><div><b>Замовлення №' + esc(o.id) + '</b><span class="muted"> від ' + date(o.created_at) + '</span></div><span class="st st-' + esc(o.status) + '">' + esc(o.status_label || STATUS[o.status] || o.status) + '</span></div>' +
           progress(o.status) +
           '<ul class="ord-items">' + o.items.map(function (i) { return '<li><span>' + esc(i.title) + (i.opt ? ' <small class="muted">' + esc(i.opt) + '</small>' : '') + '</span><span class="muted">' + i.qty + ' × ' + money(i.price) + '</span></li>'; }).join('') + '</ul>' +
-          '<div class="ord-foot"><div><span class="muted">' + esc(DELIV[dv.method] || '') + '</span>' + (where ? '<br>' + esc(where) : '') +
+          '<div class="ord-foot"><div><span class="muted">' + esc(dv.title || DELIV[dv.method] || '') + '</span>' + (where ? '<br>' + esc(where) : '') +
           (o.ttn ? '<br>ТТН: <a href="https://novaposhta.ua/tracking/?cargo_number=' + encodeURIComponent(o.ttn) + '" target="_blank" rel="noopener">' + esc(o.ttn) + '</a>' : '') +
-          (o.payment ? '<br><span class="muted">Оплата: ' + esc(PAY[o.payment] || o.payment) + '</span>' : '') + '</div><b class="ord-total">' + money(o.total) + '</b></div></article>';
+          (o.payment ? '<br><span class="muted">Оплата: ' + esc(dv.paymentTitle || PAY[o.payment] || o.payment) + '</span>' : '') + '</div><b class="ord-total">' + money(o.total) + '</b></div></article>';
       }).join('') : '<div class="acc-card"><p>Замовлень у кабінеті поки немає.</p><p class="muted">Нові замовлення, оформлені після входу, з’являться тут автоматично.</p><a class="btn" href="/katalog.html">Перейти до каталогу</a></div>';
       html += '<details class="acc-card link-ord"><summary>Оформлювали замовлення раніше без кабінету? Додайте його сюди</summary>' +
         '<form data-link novalidate><div class="fields"><label>Номер замовлення<input name="id" placeholder="261126-1234" required></label><label>Телефон, з яким оформлено<input name="phone" type="tel" inputmode="tel" value="' + esc(fmtPhone(me.phone)) + '"></label></div>' +
@@ -217,7 +225,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function profileTab(el) {
     var d = me.delivery || {};
-    var method = d.method || 'np', city = d.city && d.city.id ? d.city : null, branch = d.branch && d.branch.id ? d.branch : null, branches = null;
+    var method = ON.indexOf(d.method) >= 0 ? d.method : ON[0], city = d.city && d.city.id ? d.city : null, branch = d.branch && d.branch.id ? d.branch : null, branches = null;
     el.innerHTML = '<form class="acc-card" data-profile novalidate><h2>Контактні дані</h2><div class="fields">' +
       '<label>Ім’я<input name="first_name" autocomplete="given-name" value="' + esc(me.first_name) + '"></label>' +
       '<label>Прізвище<input name="last_name" autocomplete="family-name" value="' + esc(me.last_name) + '"></label>' +
@@ -225,7 +233,7 @@ document.addEventListener('DOMContentLoaded', function () {
       '<label>Телефон<input name="phone" type="tel" inputmode="tel" autocomplete="tel" value="' + esc(fmtPhone(me.phone)) + '"></label>' +
       '<label class="wide">Email<input name="email" type="email" autocomplete="email" value="' + esc(me.email) + '"></label></div>' +
       '<h2>Доставка за замовчуванням</h2><p class="note">Підставляється в кошик автоматично. Після кожного замовлення оновлюється сама.</p>' +
-      '<div class="radios">' + ['np', 'np_courier', 'up', 'pickup'].map(function (m) { return '<label class="radio"><input type="radio" name="method" value="' + m + '"' + (m === method ? ' checked' : '') + '><span><b>' + DELIV[m] + '</b></span></label>'; }).join('') + '</div>' +
+      '<div class="radios">' + ON.map(function (m) { return '<label class="radio"><input type="radio" name="method" value="' + m + '"' + (m === method ? ' checked' : '') + '><span><b>' + esc(DELIV[m]) + '</b></span></label>'; }).join('') + '</div>' +
       '<div class="fields" data-addr>' +
         '<div class="ac wide" data-ac="city"><label for="p-city">Місто або село</label><input id="p-city" autocomplete="off" placeholder="Почніть вводити назву" value="' + esc(d.city ? d.city.name : '') + '"><ul hidden></ul></div>' +
         '<div class="ac wide" data-ac="branch"><label for="p-branch">Відділення</label><input id="p-branch" autocomplete="off" placeholder="Оберіть відділення" value="' + esc(d.branch ? d.branch.title : '') + '"><ul hidden></ul></div>' +
