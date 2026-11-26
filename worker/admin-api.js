@@ -5,6 +5,7 @@ import { isAuthed, login, logoutCookie } from './auth.js';
 import { bumpVersion } from './db.js';
 import { hashPassword, normPhone, normEmail, publicCustomer, customerOrder } from './account.js';
 import { checkoutConfig, cleanCheckout } from './checkout.js';
+import { loadNotify, cleanNotify, processOrder, testNotify, SMS_PROVIDERS } from './notify.js';
 
 const json = (data, status = 200, extra = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extra } });
@@ -49,12 +50,20 @@ export async function adminApi(request, env, url) {
       if (id === 'export.csv') return ordersCsv(db, url);
       if (!id && m === 'GET') return listOrders(db, url);
       if (id && m === 'GET') return getOrder(db, id);
-      if (id && m === 'PATCH') return updateOrder(db, id, body);
+      if (id && m === 'PATCH') return updateOrder(env, id, body);
+      if (id && seg[2] === 'notify' && m === 'POST') return resendNotify(env, id, body);
       if (id && m === 'DELETE') { await db.prepare(`DELETE FROM orders WHERE id = ?`).bind(id).run(); return json({ ok: true }); }
       break;
     case 'settings':
       if (m === 'GET') return getSettings(db);
       if (m === 'PUT') return write(() => putSettings(db, body));
+      break;
+    case 'notify':
+      if (m === 'GET') return getNotify(env, db);
+      if (m === 'PUT') return putNotify(env, db, body);
+      break;
+    case 'notify-test':
+      if (m === 'POST') return json(await testNotify(env, db, body || {}).catch((e) => ({ error: e.message })));
       break;
     case 'checkout':
       if (m === 'GET') return getCheckout(db);
@@ -136,7 +145,7 @@ async function dashboard(db) {
 
 // ---------- замовлення ----------
 function orderRow(r) {
-  return { ...r, delivery: parse(r.delivery, {}), items: parse(r.items, []), call_me: !!r.call_me, telegram_ok: !!r.telegram_ok };
+  return { ...r, delivery: parse(r.delivery, {}), items: parse(r.items, []), call_me: !!r.call_me, telegram_ok: !!r.telegram_ok, notify: parse(r.notify || null, {}) || {} };
 }
 
 function orderWhere(url) {
@@ -176,10 +185,12 @@ async function getOrder(db, id) {
   return r ? json(orderRow(r)) : json({ error: 'not_found' }, 404);
 }
 
-async function updateOrder(db, id, b) {
+async function updateOrder(env, id, b) {
+  const db = env.DB;
   const r = await db.prepare(`SELECT * FROM orders WHERE id = ?`).bind(id).first();
   if (!r) return json({ error: 'not_found' }, 404);
   const o = orderRow(r);
+  const prev = { status: o.status, ttn: o.ttn };
   if (b.status !== undefined) { if (!ORDER_STATUSES.includes(b.status)) return bad('Невідомий статус'); o.status = b.status; }
   if (b.admin_note !== undefined) o.admin_note = str(b.admin_note, 5000);
   if (b.ttn !== undefined) o.ttn = str(b.ttn, 60);
@@ -193,7 +204,31 @@ async function updateOrder(db, id, b) {
   }
   await db.prepare(`UPDATE orders SET status=?, admin_note=?, ttn=?, name=?, phone=?, email=?, delivery=?, items=?, total=?, updated_at=? WHERE id=?`)
     .bind(o.status, o.admin_note, o.ttn, o.name, o.phone, o.email, JSON.stringify(o.delivery), JSON.stringify(o.items), o.total, now(), id).run();
-  return getOrder(db, id);
+  // Покупцю: «взято в роботу» / «відправлено, ТТН» — якщо статус чи ТТН щойно змінились.
+  let notified = { sent: {}, notes: [] };
+  try { notified = await processOrder(env, id, { prev }); } catch (e) { notified.notes.push('Сповіщення не надіслано: ' + String(e && e.message || e)); }
+  const fresh = await db.prepare(`SELECT * FROM orders WHERE id = ?`).bind(id).first();
+  return json({ ...orderRow(fresh), notified: { sent: notified.sent, notes: notified.notes } });
+}
+
+async function resendNotify(env, id, b) {
+  const ev = b && b.event;
+  if (!['accepted', 'shipped'].includes(ev)) return bad('Невідома подія');
+  const r = await processOrder(env, id, { force: [ev] });
+  const fresh = await env.DB.prepare(`SELECT * FROM orders WHERE id = ?`).bind(id).first();
+  return json({ ...orderRow(fresh), notified: { sent: r.sent, notes: r.notes } });
+}
+
+// ---------- сповіщення покупцям ----------
+async function getNotify(env, db) {
+  const { cfg } = await loadNotify(db);
+  return json({ config: cfg, providers: SMS_PROVIDERS, secrets: { email: !!env.RESEND_API_KEY, sms: !!env.SMS_TOKEN } });
+}
+async function putNotify(env, db, b) {
+  let cfg;
+  try { cfg = cleanNotify(b); } catch (e) { return bad(e.message); }
+  await db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('notify', ?)`).bind(JSON.stringify(cfg)).run();
+  return getNotify(env, db);
 }
 
 async function ordersCsv(db, url) {

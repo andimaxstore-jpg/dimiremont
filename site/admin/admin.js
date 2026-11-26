@@ -58,7 +58,7 @@
     [/^\/products$/, products], [/^\/products\/(new|\d+)$/, productEdit],
     [/^\/categories$/, categories], [/^\/categories\/(new|\d+)$/, categoryEdit],
     [/^\/attributes$/, attributes], [/^\/pages$/, pages], [/^\/pages\/home$/, homeEdit], [/^\/pages\/(new|\d+)$/, pageEdit],
-    [/^\/settings$/, settings], [/^\/checkout$/, checkoutEdit], [/^\/reviews$/, reviews], [/^\/customers$/, customers], [/^\/customers\/(\d+)$/, customerView],
+    [/^\/settings$/, settings], [/^\/checkout$/, checkoutEdit], [/^\/notify$/, notifyEdit], [/^\/reviews$/, reviews], [/^\/customers$/, customers], [/^\/customers\/(\d+)$/, customerView],
   ];
   let lastHash = location.hash;
   async function route() {
@@ -381,6 +381,7 @@
         ${field('Нотатка менеджера', 'admin_note', o.admin_note, { type: 'textarea', rows: 5, hint: 'Бачите лише ви' })}
       </div>
       <div class="toolbar" style="margin-top:12px">${tel ? `<a class="btn ghost sm" href="tel:${esc(tel)}">Подзвонити</a><a class="btn ghost sm" href="viber://chat?number=${esc(encodeURIComponent(tel))}">Viber</a>` : ''}</div></div>
+      ${notifyCard(o)}
     </div></div>
     <div class="savebar"><button class="btn">Зберегти</button><span class="grow"></span><button type="button" class="btn danger" data-del>Видалити замовлення</button></div></form>`;
     const form = $('#ord'); watchDirty(form);
@@ -402,13 +403,47 @@
       const f = formData(form);
       const items = $$('tr[data-i]', tbl).map((tr) => ({ sku: $('[name=sku]', tr).value, title: $('[name=title]', tr).value, opt: $('[name=opt]', tr).value, qty: +$('[name=qty]', tr).value, price: +$('[name=price]', tr).value }));
       try {
-        await api('PATCH', 'orders/' + encodeURIComponent(id), {
+        const saved = await api('PATCH', 'orders/' + encodeURIComponent(id), {
           status: f.status, ttn: f.ttn, admin_note: f.admin_note, name: f.name, phone: f.phone, email: f.email, items,
           delivery: { method: f.d_method, title: f.d_method === d.method && d.title ? d.title : (DELIV[f.d_method] || f.d_method), city: f.d_city, branch: f.d_branch, address: f.d_address },
         });
-        dirty = false; toast('Збережено'); refreshBadge(); orderEdit(id);
+        dirty = false; notifyToast(saved.notified, 'Збережено'); refreshBadge(); orderEdit(id);
       } catch (ex) { fail(ex); }
     });
+    $$('[data-resend]', view).forEach((b) => b.addEventListener('click', async () => {
+      if (dirty && !confirm('Є незбережені зміни в замовленні. Надіслати за збереженими даними?')) return;
+      b.disabled = true;
+      try { const r = await api('POST', 'orders/' + encodeURIComponent(id) + '/notify', { event: b.dataset.resend }); dirty = false; notifyToast(r.notified, 'Нічого не надіслано'); orderEdit(id); }
+      catch (ex) { fail(ex); b.disabled = false; }
+    }));
+  }
+
+  // ---------- сповіщення покупцю в картці замовлення ----------
+  const EV = { accepted: 'Взято в роботу', shipped: 'Відправлено, ТТН' };
+  const chLine = (name, x) => !x ? '' : x.ok
+    ? `<div style="color:var(--ok)">✓ ${name}: ${esc(x.to || '')}</div>`
+    : `<div class="${x.skipped ? 'muted' : 'err'}">${x.skipped ? '–' : '✗'} ${name}: ${esc(x.error || 'не надіслано')}</div>`;
+  function notifyCard(o) {
+    const log = o.notify || {};
+    const rows = Object.keys(EV).map((ev) => {
+      const x = log[ev];
+      return `<div style="margin-bottom:10px"><b>${EV[ev]}</b>${x ? ` <small class="muted">${fmtDate(x.at)}${x.ttn ? ' · ТТН ' + esc(x.ttn) : ''}</small>` : ' <small class="muted">ще не надсилали</small>'}
+        ${x ? chLine('Email', x.email) + chLine('SMS', x.sms) : ''}
+        <div style="margin-top:4px"><button type="button" class="btn ghost sm" data-resend="${ev}">${x ? 'Надіслати ще раз' : 'Надіслати зараз'}</button></div></div>`;
+    }).join('');
+    return `<div class="card no-print"><h2>Сповіщення покупцю</h2>${rows}<p class="hint">Надсилаються самі, коли змінюєте статус або ТТН. Налаштування й тексти: <a href="#/notify">Сповіщення покупцям</a>.</p></div>`;
+  }
+  function notifyToast(n, fallback) {
+    const parts = [], bad = [];
+    for (const [ev, x] of Object.entries((n && n.sent) || {})) {
+      for (const [ch, name] of [['email', 'email'], ['sms', 'SMS']]) {
+        const c = x[ch]; if (!c) continue;
+        if (c.ok) parts.push(`${name} «${EV[ev]}» надіслано`); else if (!c.skipped) bad.push(`${name} «${EV[ev]}»: ${c.error}`);
+      }
+    }
+    const notes = (n && n.notes) || [];
+    if (bad.length || notes.length) toast([fallback === 'Збережено' ? 'Збережено.' : '', ...parts, ...bad, ...notes].filter(Boolean).join(' · '), true);
+    else toast(parts.length ? (fallback === 'Збережено' ? 'Збережено · ' : '') + parts.join(' · ') : fallback, !parts.length && fallback !== 'Збережено');
   }
 
   // =====================================================================
@@ -896,6 +931,95 @@
           r.delivery.forEach((d) => { DELIV[d.id] = d.title; }); r.payment.forEach((p) => { PAY[p.id] = p.title; });
         } catch (ex) { fail(ex); }
       }
+    });
+  }
+
+  // =====================================================================
+  // Сповіщення покупцям (email + SMS)
+  const smsParts = (t) => { t = String(t || ''); if (!t) return 0; const g = /^[\x20-\x7E\n\r]*$/.test(t); const one = g ? 160 : 70, mu = g ? 153 : 67; return t.length <= one ? 1 : Math.ceil(t.length / mu); };
+  const SAMPLE = { name: 'Олена', fullname: 'Петренко Олена', order: '261126-1234', total: '1 250 грн', ttn: '20450012345678', carrier: 'Нова пошта', track: 'https://novaposhta.ua/tracking/?cargo_number=20450012345678', shop: 'Дім і Ремонт', phone: '+380735671290', site: 'https://dimiremont.com.ua' };
+  const fillT = (t, v) => String(t || '').replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m));
+  async function notifyEdit() {
+    const d = await api('GET', 'notify');
+    let c = d.config;
+    const sec = (ok, name) => ok ? `<span class="pill" style="color:var(--ok)">ключ ${name} задано</span>` : `<span class="pill" style="color:var(--warn)">немає секрету ${name}</span>`;
+    const evCard = (ev, title, hint) => {
+      const e = c[ev];
+      return `<div class="card" data-ev="${ev}"><h2>${title}</h2><p class="hint" style="margin-top:-6px">${hint}</p>
+        ${ev === 'accepted' ? `<div class="grid2" style="margin-bottom:10px"><label>Коли надсилати<select data-k="when">
+          <option value="confirmed" ${e.when !== 'new' ? 'selected' : ''}>Коли ставлю статус «Підтверджене» або «Оплачене»</option>
+          <option value="new" ${e.when === 'new' ? 'selected' : ''}>Одразу після оформлення замовлення</option></select></label></div>` : ''}
+        <div class="checks" style="margin-bottom:10px"><label class="check"><input type="checkbox" data-k="email" ${e.email ? 'checked' : ''}> Email</label><label class="check"><input type="checkbox" data-k="sms" ${e.sms ? 'checked' : ''}> SMS</label></div>
+        <div class="rows">
+          <label>Тема листа<input data-k="subject" value="${esc(e.subject)}"></label>
+          <label>Текст листа<small>Порожній рядок — новий абзац. ${ev === 'accepted' ? 'Під текстом лист сам додасть список товарів і суму.' : 'Під текстом лист сам додасть кнопку «Відстежити посилку».'}</small><textarea data-k="email_text" rows="6">${esc(e.email_text)}</textarea></label>
+          <label>Текст SMS<small data-cnt></small><textarea data-k="sms_text" rows="2">${esc(e.sms_text)}</textarea></label>
+          <div class="hint" data-prev></div>
+        </div></div>`;
+    };
+    function draw() {
+      view.innerHTML = `<div class="head"><h1>Сповіщення покупцям</h1></div>
+      <p class="hint" style="margin:-8px 0 16px">Покупець отримує два повідомлення: «Дякуємо, взято в роботу» і «Відправлено» з номером ТТН. Вони надсилаються самі, коли ви змінюєте статус замовлення або вписуєте ТТН.</p>
+      <form id="nf">
+      <div class="card"><div class="toolbar" style="margin-bottom:8px"><label class="check"><input type="checkbox" name="email.enabled" ${c.email.enabled ? 'checked' : ''}> <b>Email</b></label>${sec(d.secrets.email, 'RESEND_API_KEY')}<span class="grow"></span><small class="muted">Resend · 3000 листів на місяць безкоштовно</small></div>
+        <div class="grid2">${field('Ім’я відправника', 'email.from_name', c.email.from_name)}${field('Адреса відправника', 'email.from_email', c.email.from_email, { hint: 'на вашому домені, підтвердженому в Resend' })}
+        ${field('Відповіді надсилати на', 'email.reply_to', c.email.reply_to, { hint: 'напр. ваша пошта Gmail; порожньо — на адресу відправника', ph: 'shop@gmail.com' })}</div>
+        <details style="margin-top:10px"><summary class="hint">Як підключити email</summary><ol class="hint">
+          <li>Зареєструйтесь на resend.com, Domains → Add Domain → dimiremont.com.ua.</li>
+          <li>Додайте записи DNS, які покаже Resend (у Cloudflare: Websites → dimiremont.com.ua → DNS). Дочекайтесь статусу Verified.</li>
+          <li>API Keys → Create API Key (Sending access). Скопіюйте ключ.</li>
+          <li>Cloudflare → Workers → dimiremont → Settings → Variables and Secrets → Add → Secret, назва <b>RESEND_API_KEY</b>, значення — ключ.</li>
+          <li>Увімкніть Email тут, збережіть і надішліть тест собі.</li></ol></details></div>
+      <div class="card"><div class="toolbar" style="margin-bottom:8px"><label class="check"><input type="checkbox" name="sms.enabled" ${c.sms.enabled ? 'checked' : ''}> <b>SMS</b></label>${sec(d.secrets.sms, 'SMS_TOKEN')}<span class="grow"></span><small class="muted">≈1,3 грн за SMS</small></div>
+        <div class="grid2">${field('SMS-сервіс', 'sms.provider', c.sms.provider, { type: 'select', options: Object.entries(d.providers) })}
+        ${field('Ім’я відправника (альфа-ім’я)', 'sms.sender', c.sms.sender, { hint: 'до 11 латинських символів, точно як погоджено в сервісі', ph: 'DimRemont', attrs: 'maxlength="11"' })}</div>
+        <details style="margin-top:10px"><summary class="hint">Як підключити SMS</summary><ol class="hint">
+          <li>Зареєструйтесь у TurboSMS (turbosms.ua) або SMSClub (smsclub.mobi), поповніть баланс.</li>
+          <li>Подайте заявку на альфа-ім’я (напр. DimRemont). Поки його погоджують, можна тестувати зі спільним ім’ям сервісу.</li>
+          <li>Візьміть токен API: TurboSMS — Налаштування → API (HTTP); SMSClub — Профіль → Токен.</li>
+          <li>Cloudflare → Workers → dimiremont → Settings → Variables and Secrets → Add → Secret, назва <b>SMS_TOKEN</b>, значення — токен.</li>
+          <li>Увімкніть SMS тут, збережіть і надішліть тест на свій номер.</li></ol></details></div>
+      ${evCard('accepted', '1. Дякуємо, взято в роботу', 'Один раз на замовлення.')}
+      ${evCard('shipped', '2. Відправлено, номер ТТН', 'Коли статус «Відправлене» і заповнено ТТН. Якщо ТТН змінили, надішлеться ще раз з новим номером. Без ТТН не надсилається.')}
+      <p class="hint">Змінні в текстах: {name} ім’я покупця, {fullname} ПІБ, {order} номер замовлення, {total} сума, {ttn} номер ТТН, {carrier} перевізник, {track} посилання на відстеження, {shop} назва магазину, {phone} ваш телефон, {site} сайт.</p>
+      <div class="savebar"><button class="btn">Зберегти</button></div></form>
+      <div class="card" style="margin-top:16px"><h2>Тестове повідомлення</h2><p class="hint">Надсилає приклад з поточними (навіть не збереженими) текстами. Замовлення вигадане.</p>
+        <div class="grid3" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+          ${field('Подія', 't_event', 'accepted', { type: 'select', options: [['accepted', 'Взято в роботу'], ['shipped', 'Відправлено, ТТН']] })}
+          ${field('Email для тесту', 't_email', '', { ph: 'ваша пошта' })}${field('Телефон для тесту', 't_phone', '', { ph: '+380…' })}</div>
+        <button type="button" class="btn ghost" id="ntest" style="margin-top:10px">Надіслати тест</button><div id="nres" style="margin-top:10px"></div></div>`;
+      $$('[data-ev]').forEach(updPrev);
+    }
+    function read() {
+      const f = $('#nf');
+      const out = { email: { ...c.email }, sms: { ...c.sms }, accepted: { ...c.accepted }, shipped: { ...c.shipped } };
+      $$('[name]', f).forEach((el) => { const [a, b] = el.name.split('.'); if (b && out[a]) out[a][b] = el.type === 'checkbox' ? el.checked : el.value; });
+      $$('[data-ev]', f).forEach((card) => { const e = out[card.dataset.ev]; $$('[data-k]', card).forEach((x) => { e[x.dataset.k] = x.type === 'checkbox' ? x.checked : x.value; }); });
+      return out;
+    }
+    function updPrev(card) {
+      const t = $('[data-k=sms_text]', card).value, txt = fillT(t, SAMPLE), n = smsParts(txt);
+      $('[data-cnt]', card).innerHTML = `${txt.length} символів з підставленими даними · <b style="color:${n > 1 ? 'var(--warn)' : 'var(--ok)'}">${n} SMS</b>${n > 1 ? ' (кожна оплачується окремо; кирилиця — 70 символів на SMS)' : ''}`;
+      $('[data-prev]', card).textContent = 'SMS виглядатиме так: ' + txt;
+    }
+    draw();
+    const nf = $('#nf');
+    nf.addEventListener('input', (e) => { dirty = true; const card = e.target.closest('[data-ev]'); if (card) updPrev(card); });
+    nf.addEventListener('change', () => { dirty = true; });
+    nf.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { const r = await api('PUT', 'notify', read()); c = r.config; dirty = false; toast('Збережено'); } catch (ex) { fail(ex); }
+    });
+    $('#ntest').addEventListener('click', async () => {
+      const out = $('#nres'), t = formData($('#ntest').closest('.card'));
+      if (!t.t_email.trim() && !t.t_phone.trim()) { out.innerHTML = '<p class="err">Вкажіть email або телефон для тесту</p>'; return; }
+      out.innerHTML = '<p class="muted">Надсилаємо…</p>';
+      try {
+        const r = await api('POST', 'notify-test', { config: read(), event: t.t_event, email: t.t_email, phone: t.t_phone });
+        if (r.error) { out.innerHTML = `<p class="err">${esc(r.error)}</p>`; return; }
+        out.innerHTML = [['email', 'Email'], ['sms', 'SMS']].filter(([k]) => r[k]).map(([k, n]) => r[k].ok
+          ? `<p style="color:var(--ok)">✓ ${n} на ${esc(r[k].to)}: надіслано</p>` : `<p class="err">✗ ${n}: ${esc(r[k].error)}</p>`).join('');
+      } catch (ex) { out.innerHTML = `<p class="err">${esc(ex.message)}</p>`; }
     });
   }
 

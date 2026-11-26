@@ -19,6 +19,7 @@ import { adminApi } from './admin-api.js';
 import * as R from './render.js';
 import cartTpl from './cart.html';
 import { accountApi, currentCustomer, rememberFromOrder, productsBySlugs } from './account.js';
+import { processOrder } from './notify.js';
 import { checkoutConfig, activeDelivery, paymentsFor, paymentTitle, CITY_KINDS, BRANCH_KINDS, ADDRESS_KINDS } from './checkout.js';
 
 const NP_URL = 'https://api.novaposhta.ua/v2.0/json/';
@@ -52,7 +53,7 @@ export default {
 };
 
 async function api(request, env, ctx, url) {
-  if (url.pathname === '/api/order' && request.method === 'POST') return await order(request, env);
+  if (url.pathname === '/api/order' && request.method === 'POST') return await order(request, env, ctx);
   if (url.pathname === '/api/review' && request.method === 'POST') return await review(request, env);
   if (url.pathname.startsWith('/api/account/')) return await accountApi(request, env, url);
   if (url.pathname === '/api/products' && env.DB) return await productsBySlugs(env, url);
@@ -60,7 +61,7 @@ async function api(request, env, ctx, url) {
   if (url.pathname === '/api/np/warehouses') return await cached(request, ctx, () => npWarehouses(url, env));
   if (url.pathname === '/api/up/cities') return await cached(request, ctx, () => upCities(url, env));
   if (url.pathname === '/api/up/offices') return await cached(request, ctx, () => upOffices(url, env));
-  if (url.pathname === '/api/health') return json({ ok: true, db: !!env.DB, admin: !!env.ADMIN_PASSWORD, telegram: !!env.TELEGRAM_BOT_TOKEN, np: !!env.NP_API_KEY, up: !!env.UP_TOKEN });
+  if (url.pathname === '/api/health') return json({ ok: true, db: !!env.DB, admin: !!env.ADMIN_PASSWORD, telegram: !!env.TELEGRAM_BOT_TOKEN, np: !!env.NP_API_KEY, up: !!env.UP_TOKEN, email: !!env.RESEND_API_KEY, sms: !!env.SMS_TOKEN });
   return json({ error: 'not_found' }, 404);
 }
 
@@ -223,7 +224,7 @@ async function upOffices(url, env) {
 const esc = (s) => String(s == null ? '' : s).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
 const money = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' грн';
 
-async function order(request, env) {
+async function order(request, env, ctx) {
   if (!env.DB && (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID)) return json({ error: 'not_configured' }, 503);
   let o;
   try { o = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
@@ -296,6 +297,11 @@ async function order(request, env) {
   const tg = await notifyTelegram(env, { id, name, phone, email: c.email, delivery, payment: o.payment, comment, callMe: o.callMe, items, total, freeShip });
   if (saved && tg.sent) await env.DB.prepare(`UPDATE orders SET telegram_ok = 1 WHERE id = ?`).bind(id).run().catch(() => {});
   if (!saved && !tg.sent) { console.log('order_failed', tg.errors); return json({ error: 'telegram_failed', details: tg.errors }, 502); }
+  // «Дякуємо, взято в роботу» одразу після оформлення (якщо так налаштовано) — у фоні, покупець не чекає.
+  if (saved) {
+    const job = processOrder(env, id, { justCreated: true }).catch((e) => console.log('notify_failed', String(e)));
+    if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
+  }
   return json({ ok: true, id, total });
 }
 
