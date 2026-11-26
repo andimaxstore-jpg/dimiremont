@@ -504,3 +504,71 @@ export function accountPage(S) {
 <script src="/assets/account.js" defer></script>`;
   return layout(S, { path: 'kabinet.html', title: `Особистий кабінет | ${st.shop_name}`, desc: 'Особистий кабінет покупця: замовлення, особисті дані, збережені товари.', body, robots: 'noindex,nofollow' });
 }
+
+/**
+ * Фід товарів для Google Merchant Center (RSS 2.0 з простором імен g:), /google-feed.xml.
+ * Один запис = один варіант (артикул); варіанти однієї картки об'єднані item_group_id (як productGroupID у розмітці).
+ * Ціни, наявність і властивості (color/size/pattern) — ті самі, що в JSON-LD на сторінці товару.
+ * Варіанти без фото не потрапляють у фід: Google відхиляє товари із заглушкою замість фото.
+ */
+const GPC = {
+  // Категорії таксономії Google лише там, де відповідність однозначна; решту Google визначить сам.
+  'Меблі': 'Furniture',
+  'Зберігання': 'Home & Garden > Household Supplies > Storage & Organization',
+  'Килимки вологопоглинаючі': 'Home & Garden > Decor > Rugs',
+  'Дзеркала та дзеркальний декор': 'Home & Garden > Decor > Mirrors',
+  'Покриття для підлоги': 'Hardware > Building Materials > Flooring & Carpet',
+};
+const X = (s) => E(String(s == null ? '' : s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ''));
+const cut = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, '') + '…' : s; };
+
+export function googleFeed(S) {
+  const st = S.settings;
+  const site = String(st.site_url || '').replace(/\/$/, '');
+  const abs = (u) => (/^https?:/i.test(u) ? u : site + img(u));
+  const freeFrom = +st.free_ship_from || 0;
+  const propOf = (o) => (o === 'Колір' ? 'color' : ['Розмір', 'Яруси'].includes(o) ? 'size' : 'pattern');
+  // Один артикул постачальника інколи стоїть у двох картках (різні розміри) — тоді id = артикул + номер картки.
+  const skuN = new Map();
+  for (const p of S.visible) for (const v of p.variants) skuN.set(v.sku, (skuN.get(v.sku) || 0) + 1);
+  const items = [];
+  for (const p of S.visible) {
+    const cat = p.cat;
+    const group = S.groups.find((g) => g.id === cat.group_id);
+    const desc = cut(stripTags(p.description) || p.seo_desc || `${p.title} — ${lowerFirst(cat.blurb || cat.name)}`.replace(/[.\s]+$/, '') + '.', 5000);
+    const multi = p.variants.length > 1;
+    for (const v of p.variants) {
+      const photo = v.image || p.cover;
+      if (!photo || !v.sku || !(+v.price > 0)) continue;
+      const vals = Object.values(v.options || {}).filter(Boolean);
+      const props = {};
+      for (const [o, val] of Object.entries(v.options || {})) if (val) { const k = propOf(o); props[k] = props[k] ? `${props[k]}, ${val}` : String(val); }
+      const price = +v.price, old = +v.old_price || 0;
+      const f = [
+        ['g:id', skuN.get(v.sku) > 1 ? `${v.sku}-${p.id}` : v.sku],
+        ['g:title', cut(vals.length ? `${p.title} — ${vals.join(', ')}` : p.title, 150)],
+        ['g:description', desc],
+        ['g:link', `${site}/tovar/${p.slug}.html${multi ? '#' + v.sku : ''}`],
+        ['g:image_link', abs(photo)],
+        ...(p.cover && p.cover !== photo ? [['g:additional_image_link', abs(p.cover)]] : []),
+        ['g:availability', v.in_stock ? 'in_stock' : 'out_of_stock'],
+        ['g:price', `${(old > price ? old : price).toFixed(2)} UAH`],
+        ...(old > price ? [['g:sale_price', `${price.toFixed(2)} UAH`]] : []),
+        ['g:condition', 'new'],
+        ['g:brand', st.shop_name],
+        ['g:mpn', v.sku],
+        ...(multi ? [['g:item_group_id', `SW-G${p.id}`]] : []),
+        ...Object.entries(props).map(([k, val]) => [`g:${k}`, cut(val, 100)]),
+        ['g:product_type', [group && group.name, cat.name].filter(Boolean).join(' > ')],
+        ...(GPC[cat.name] ? [['g:google_product_category', GPC[cat.name]]] : []),
+        ['g:min_handling_time', '0'], ['g:max_handling_time', '1'],
+      ];
+      // Безкоштовна доставка від порогу; для решти — тарифи перевізника з налаштувань доставки в Merchant Center.
+      const ship = freeFrom && price >= freeFrom ? '<g:shipping><g:country>UA</g:country><g:service>Нова пошта</g:service><g:price>0.00 UAH</g:price></g:shipping>' : '';
+      items.push(`<item>${f.map(([k, val]) => `<${k}>${X(val)}</${k}>`).join('')}${ship}</item>`);
+    }
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel>` +
+    `<title>${X(st.shop_name)}</title><link>${X(site)}/</link><description>${X(st.shop_name)} — товари для дому та швидкого ремонту</description>\n` +
+    items.join('\n') + '\n</channel></rss>\n';
+}

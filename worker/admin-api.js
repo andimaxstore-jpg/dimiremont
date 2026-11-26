@@ -14,7 +14,7 @@ const int = (v, d = 0) => (Number.isFinite(+v) ? Math.round(+v) : d);
 const num = (v) => (Number.isFinite(+v) && +v >= 0 ? Math.round(+v * 100) / 100 : 0);
 const flag = (v) => (v ? 1 : 0);
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const RESERVED = new Set(['index', 'katalog', 'koshyk', '404', 'sitemap', 'robots', 'admin', 'api', 'assets', 'img', 'media', 'tovar', 'kategoriya']);
+const RESERVED = new Set(['index', 'katalog', 'koshyk', '404', 'sitemap', 'robots', 'google-feed', 'admin', 'api', 'assets', 'img', 'media', 'tovar', 'kategoriya']);
 const now = () => new Date().toISOString();
 
 const TR = { а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ь: '', ю: 'iu', я: 'ia', ы: 'y', э: 'e', ё: 'io', ъ: '' };
